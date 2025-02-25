@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Arduino Sensor Data</title>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const socket = io();
+
+  // Log when the client connects
+  socket.on("connect", function() {
+    console.log("Connected to Socket.IO server");<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Arduino Sensor Data</title>
+    <!-- Load the Socket.IO client library -->
+    <script src="/socket.io/socket.io.js"></script>
+  </head>
+  <body>
+    <h1>Arduino Sensor Data</h1>
+    <p>Luminosity: <span id="luminosity">N/A</span></p>
+    <p>LED State: <span id="ledState">N/A</span></p>
+    
+    <script>
+      // Connect to the Socket.IO server
+      const socket = io();
+
+      // Log when the client connects
+      socket.on("connect", function() {
+        console.log("Connected to Socket.IO server");
+      });
+
+      // Listen for sensorData events and update the page
+      socket.on("sensorData", function(data) {
+        console.log("Received sensor data:", data);
+        document.getElementById("luminosity").innerText = data.value;
+        document.getElementById("ledState").innerText = data.ledState;
+      });
+    </script>
+  </body>
+</html>
