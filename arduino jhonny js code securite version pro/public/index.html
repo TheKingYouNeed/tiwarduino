@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Système de Sécurité Arduino</title>
+    <!-- Load the Socket.IO client library -->
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      h1 {
+        color: #2c3e50;
+        text-align: center;
+        margin-bottom: 30px;
+      }
+      .container {
+        background-color: white;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+      }
+      .sensor-data {
+        font-size: 18px;
+        margin-bottom: 10px;
+      }
+      .value {
+        font-weight: bold;
+        color: #3498db;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      select {
+        width: 100%;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+      }
+      .status {
+        padding: 10px;
+        border-radius: 4px;
+        margin-top: 15px;
+        background-color: #eee;
+      }
+      .alarm {
+        background-color: #f8d7da;
+        color: #721c24;
+        padding: 10px;
+        border-radius: 4px;
+        margin-top: 15px;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Système de Sécurité Arduino</h1>
+    
+    <div class="container">
+      <h2>Données du Capteur</h2>
+      <div class="sensor-data">
+        Luminosité: <span id="luminosity" class="value">N/A</span>
+      </div>
+      <div class="sensor-data">
+        État de la LED: <span id="ledState" class="value">N/A</span>
+      </div>
+      <div class="sensor-data">
+        Mode actuel: <span id="currentMode" class="value">Simple</span>
+      </div>
+      <div class="sensor-data">
+        État de la carte Arduino: <span id="boardStatus" class="value">En attente de connexion...</span>
+      </div>
+      <div id="alarmStatus" class="alarm">
+        Statut d'alarme: <span id="alarmStatusText">Inactif</span>
+      </div>
+    </div>
+    
+    <div class="container">
+      <h2>Configuration</h2>
+      <div class="form-group">
+        <label for="ledMode">Mode d'allumage de la LED:</label>
+        <select id="ledMode">
+          <option value="simple">Simple (LED asservie au capteur)</option>
+          <option value="alarm">Alarme (Détection de présence)</option>
+        </select>
+      </div>
+      <div class="status" id="systemStatus">
+        Système en mode normal
+      </div>
+    </div>
+    
+    <script>
+      // Connect to the Socket.IO server
+      const socket = io();
+      let currentMode = "simple";
+
+      // Log when the client connects
+      socket.on("connect", function() {
+        console.log("Connected to Socket.IO server");
+      });
+
+      // Listen for sensorData events and update the page
+      socket.on("sensorData", function(data) {
+        console.log("Received sensor data:", data);
+        document.getElementById("luminosity").innerText = data.value;
+        document.getElementById("ledState").innerText = data.ledState;
+      });
+
+      // Listen for alarm status updates
+      socket.on("alarmStatus", function(data) {
+        console.log("Received alarm status:", data);
+        const alarmDiv = document.getElementById("alarmStatus");
+        const alarmText = document.getElementById("alarmStatusText");
+        
+        if (data.alarmActive) {
+          alarmDiv.style.display = "block";
+          alarmText.innerText = data.message || "Alarme active";
+        } else {
+          alarmDiv.style.display = "none";
+          alarmText.innerText = "Inactif";
+        }
+        
+        document.getElementById("systemStatus").innerText = data.status || "Système en mode normal";
+      });
+
+      // Listen for board status updates
+      socket.on("boardStatus", function(data) {
+        console.log("Received board status:", data);
+        const boardStatusElement = document.getElementById("boardStatus");
+        
+        if (data.connected) {
+          boardStatusElement.innerText = "Connectée";
+          boardStatusElement.style.color = "#28a745";
+        } else {
+          boardStatusElement.innerText = "Déconnectée" + (data.error ? ` (${data.error})` : "");
+          boardStatusElement.style.color = "#dc3545";
+        }
+      });
+
+      // Function to send mode change request
+      function updateMode(mode) {
+        fetch('/update-mode', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ mode: mode })
+        })
+        .then(response => response.json())
+        .then(data => {
+          console.log('Mode updated:', data);
+          document.getElementById("currentMode").innerText = mode === "simple" ? "Simple" : "Alarme";
+        })
+        .catch(error => {
+          console.error('Error updating mode:', error);
+        });
+      }
+
+      // Event listener for mode change
+      document.getElementById("ledMode").addEventListener("change", function() {
+        const newMode = this.value;
+        currentMode = newMode;
+        updateMode(newMode);
+      });
+
+      // Function to fetch sensor data
+      function fetchSensorData() {
+        fetch('/sensor-data')
+          .then(response => response.json())
+          .then(data => {
+            document.getElementById("luminosity").innerText = data.value;
+            document.getElementById("ledState").innerText = data.ledState;
+          })
+          .catch(error => {
+            console.error('Error fetching sensor data:', error);
+          });
+      }
+
+      // Function to check alarm status
+      function checkAlarmStatus() {
+        fetch('/alarm-status')
+          .then(response => response.json())
+          .then(data => {
+            const alarmDiv = document.getElementById("alarmStatus");
+            const alarmText = document.getElementById("alarmStatusText");
+            
+            if (data.alarmActive) {
+              alarmDiv.style.display = "block";
+              alarmText.innerText = data.message || "Alarme active";
+            } else {
+              alarmDiv.style.display = "none";
+              alarmText.innerText = "Inactif";
+            }
+            
+            document.getElementById("systemStatus").innerText = data.status || "Système en mode normal";
+          })
+          .catch(error => {
+            console.error('Error checking alarm status:', error);
+          });
+      }
+
+      // Set up periodic data fetching
+      setInterval(fetchSensorData, 5000); // Every 5 seconds
+      setInterval(checkAlarmStatus, 2000); // Every 2 seconds
+
+      // Initial data fetch
+      fetchSensorData();
+      checkAlarmStatus();
+    </script>
+  </body>
+</html>
