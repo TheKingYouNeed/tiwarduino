@@ -147,6 +147,18 @@
         }
       });
 
+      // Listen for mode change events from server
+      socket.on("modeChange", function(data) {
+        console.log("Received mode change:", data);
+        const modeSelect = document.getElementById("ledMode");
+        document.getElementById("currentMode").innerText = data.mode === "simple" ? "Simple" : "Alarme";
+        
+        // Update the select dropdown to match the new mode
+        if (modeSelect.value !== data.mode) {
+          modeSelect.value = data.mode;
+        }
+      });
+
       // Function to send mode change request
       function updateMode(mode) {
         fetch('/update-mode', {

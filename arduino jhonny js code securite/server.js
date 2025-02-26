@@ -21,6 +21,11 @@ global.alarmActive = false;
 global.alarmMessage = 'Inactif';
 global.systemStatus = 'Système en mode normal';
 global.operationMode = 'simple'; // Default mode
+global.alarmMode = false;
+global.detectionActive = false;
+global.buttonPressSequence = [];
+global.correctCode = [2, 1, 2, 1]; // Button 2, Button 1, Button 2, Button 1
+global.LIGHT_THRESHOLD = 300; // Define a consistent threshold value
 
 // Define API endpoints for async requests
 app.get('/sensor-data', (req, res) => {
@@ -38,9 +43,63 @@ app.get('/alarm-status', (req, res) => {
 app.post('/update-mode', (req, res) => {
   const { mode } = req.body;
   if (mode && (mode === 'simple' || mode === 'alarm')) {
-    global.operationMode = mode;
+    console.log(`Changing mode from ${global.operationMode} to ${mode}`);
+    
+    // If switching to simple mode and alarm is active, stop the alarm
+    if (mode === 'simple' && (global.alarmActive || global.alarmMode || global.detectionActive)) {
+      if (typeof stopAlarmMode === 'function') {
+        stopAlarmMode();
+      } else {
+        // Fallback if function not available yet
+        global.alarmActive = false;
+        global.alarmMessage = 'Inactif';
+        global.systemStatus = 'Système en mode normal';
+        
+        // Clear any intervals that might be running
+        if (typeof alarmBlinkInterval !== 'undefined' && alarmBlinkInterval) {
+          clearInterval(alarmBlinkInterval);
+          alarmBlinkInterval = null;
+        }
+        
+        if (typeof detectionBlinkInterval !== 'undefined' && detectionBlinkInterval) {
+          clearInterval(detectionBlinkInterval);
+          detectionBlinkInterval = null;
+        }
+      }
+    } else {
+      // Just update the mode
+      global.operationMode = mode;
+      
+      // If switching to simple mode, update LED based on current sensor value
+      if (mode === 'simple' && global.sensorData && global.sensorData.value !== 'N/A') {
+        // Clear any intervals that might be running
+        if (typeof alarmBlinkInterval !== 'undefined' && alarmBlinkInterval) {
+          clearInterval(alarmBlinkInterval);
+          alarmBlinkInterval = null;
+        }
+        
+        if (typeof detectionBlinkInterval !== 'undefined' && detectionBlinkInterval) {
+          clearInterval(detectionBlinkInterval);
+          detectionBlinkInterval = null;
+        }
+        
+        const currentSensorValue = global.sensorData.value;
+        if (currentSensorValue < global.LIGHT_THRESHOLD) {
+          if (typeof led !== 'undefined') {
+            led.on();
+          }
+        } else {
+          if (typeof led !== 'undefined') {
+            led.off();
+          }
+        }
+      }
+    }
+    
     res.json({ success: true, mode });
-    console.log(`Mode changed to: ${mode}`);
+    
+    // Notify all clients about the mode change
+    io.emit("modeChange", { mode });
   } else {
     res.status(400).json({ success: false, error: 'Invalid mode' });
   }
@@ -79,7 +138,7 @@ board.on("ready", () => {
 
   // Set up the LED on digital pin 8.
   const led = new Led(8);
-  led.off();
+  led.off(); // Ensure LED is off at startup
 
   // Set up a second LED for alarm indicator on pin 9
   const alarmLed = new Led(9);
@@ -97,12 +156,9 @@ board.on("ready", () => {
 
   // Variables for system logic:
   let sensorBelowStartTime = null; // Time when sensor first went below threshold.
-  let detectionActive = false;     // Indicates if presence detection is active
   let alarmCountdown = null;       // Timer for alarm countdown
-  let alarmMode = false;           // Indicates if alarm mode is active
-  let buttonPressSequence = [];    // Sequence of button presses for code entry
-  let correctCode = [2, 1, 2, 1];  // Correct code sequence (button 2, button 1, button 2, button 1)
   let alarmBlinkInterval = null;   // Interval for alarm LED blinking
+  let detectionBlinkInterval = null; // Interval for detection LED blinking
 
   // Function to toggle the LED for blinking
   function blinkLed() {
@@ -116,7 +172,7 @@ board.on("ready", () => {
 
   // Function to start alarm mode
   function startAlarmMode() {
-    alarmMode = true;
+    global.alarmMode = true;
     global.alarmActive = true;
     global.alarmMessage = 'ALARME ACTIVE!';
     global.systemStatus = 'Système en mode alarme!';
@@ -139,25 +195,43 @@ board.on("ready", () => {
 
   // Function to stop alarm mode and return to normal
   function stopAlarmMode() {
-    alarmMode = false;
+    console.log("Stopping alarm mode and returning to simple mode");
+    
+    // Reset all global states
+    global.alarmMode = false;
+    global.detectionActive = false;
     global.alarmActive = false;
     global.alarmMessage = 'Inactif';
     global.systemStatus = 'Système en mode normal';
+    global.operationMode = 'simple'; // Reset to simple mode
+    global.buttonPressSequence = [];
     
-    // Clear any intervals
+    // Clear any intervals and timeouts
     if (alarmBlinkInterval) {
       clearInterval(alarmBlinkInterval);
       alarmBlinkInterval = null;
     }
     
-    // Turn off LEDs
-    led.off();
+    if (detectionBlinkInterval) {
+      clearInterval(detectionBlinkInterval);
+      detectionBlinkInterval = null;
+    }
+    
+    if (alarmCountdown) {
+      clearTimeout(alarmCountdown);
+      alarmCountdown = null;
+    }
+    
+    // Turn off alarm LED
     alarmLed.off();
     
-    // Reset button sequence
-    buttonPressSequence = [];
-    
-    console.log("Alarm deactivated, returning to normal mode");
+    // In simple mode, LED should follow sensor value
+    const currentSensorValue = global.sensorData.value;
+    if (currentSensorValue < global.LIGHT_THRESHOLD) {
+      led.on();
+    } else {
+      led.off();
+    }
     
     // Emit alarm status to clients
     io.emit("alarmStatus", { 
@@ -165,20 +239,26 @@ board.on("ready", () => {
       message: 'Inactif',
       status: 'Système en mode normal'
     });
+    
+    // Emit mode change to clients
+    io.emit("modeChange", { mode: 'simple' });
   }
 
   // Function to start detection countdown
   function startDetectionCountdown() {
-    detectionActive = true;
+    global.detectionActive = true;
     global.alarmActive = true;
     global.alarmMessage = 'Présence détectée! Entrez le code dans 30 secondes';
     global.systemStatus = 'Système en attente du code de sécurité';
     
     // Reset button sequence
-    buttonPressSequence = [];
+    global.buttonPressSequence = [];
     
     // Start LED blinking
-    const blinkInterval = setInterval(blinkLed, 300);
+    if (detectionBlinkInterval) {
+      clearInterval(detectionBlinkInterval);
+    }
+    detectionBlinkInterval = setInterval(blinkLed, 300);
     
     console.log("Presence detected! Enter security code within 30 seconds");
     
@@ -191,10 +271,10 @@ board.on("ready", () => {
     
     // Set 30-second countdown
     alarmCountdown = setTimeout(() => {
-      clearInterval(blinkInterval);
+      clearInterval(detectionBlinkInterval);
       
       // If code wasn't entered correctly, activate alarm
-      if (detectionActive) {
+      if (global.detectionActive) {
         startAlarmMode();
       }
     }, 30000);
@@ -203,11 +283,11 @@ board.on("ready", () => {
   // Function to check if entered code is correct
   function checkSecurityCode() {
     // Check if entered sequence matches correct code
-    if (buttonPressSequence.length === correctCode.length) {
+    if (global.buttonPressSequence.length === global.correctCode.length) {
       let isCorrect = true;
       
-      for (let i = 0; i < correctCode.length; i++) {
-        if (buttonPressSequence[i] !== correctCode[i]) {
+      for (let i = 0; i < global.correctCode.length; i++) {
+        if (global.buttonPressSequence[i] !== global.correctCode[i]) {
           isCorrect = false;
           break;
         }
@@ -229,7 +309,7 @@ board.on("ready", () => {
           alarmCountdown = null;
         }
         
-        detectionActive = false;
+        global.detectionActive = false;
         setTimeout(stopAlarmMode, 2000); // Short delay before returning to normal
       } else {
         // Code is incorrect, activate alarm
@@ -255,34 +335,33 @@ board.on("ready", () => {
   // Sensor data handler: update LED based on sensor and system mode
   sensor.on("data", function() {
     const sensorValue = this.value;
-    console.log("Luminosity:", sensorValue);
+    console.log("Luminosity:", sensorValue, "Mode:", global.operationMode);
     
     // Update global sensor data
     global.sensorData = { 
       value: sensorValue, 
-      ledState: led.isOn ? "ON" : "OFF"
+      ledState: led.isOn ? "ON" : "OFF",
+      mode: global.operationMode
     };
 
     // Handle sensor based on current operation mode
     if (global.operationMode === 'simple') {
-      // Simple mode: LED follows sensor
-      if (alarmMode) {
-        // If we were in alarm mode, return to normal
-        stopAlarmMode();
-      }
-      
-      if (sensorValue < 300) {
+      // In simple mode, LED should be ON when sensor value is below threshold
+      // and OFF when sensor value is above threshold
+      if (sensorValue < global.LIGHT_THRESHOLD) {
         led.on();
       } else {
         led.off();
       }
-    } else if (global.operationMode === 'alarm') {
-      // Alarm mode: sensor acts as presence detector
-      if (!detectionActive && !alarmMode && sensorValue < 300) {
+    } else if (global.operationMode === 'alarm' && !global.alarmMode && !global.detectionActive) {
+      // Alarm mode (standby): sensor acts as presence detector
+      if (sensorValue < global.LIGHT_THRESHOLD) {
         // Presence detected, start countdown
         startDetectionCountdown();
       }
     }
+    // Note: If in alarm mode with alarmMode or detectionActive true,
+    // we don't change LED state here as it's handled by the alarm functions
 
     // Emit sensor data to connected clients
     io.emit("sensorData", global.sensorData);
@@ -292,10 +371,10 @@ board.on("ready", () => {
   buttonPin2.on("press", () => {
     console.log("Button on pin 2 pressed");
     
-    if (detectionActive) {
+    if (global.detectionActive) {
       // Add button 2 press to sequence
-      buttonPressSequence.push(2);
-      console.log("Button sequence:", buttonPressSequence);
+      global.buttonPressSequence.push(2);
+      console.log("Button sequence:", global.buttonPressSequence);
       
       // Check if code is complete
       checkSecurityCode();
@@ -306,10 +385,10 @@ board.on("ready", () => {
   buttonPin1.on("press", () => {
     console.log("Button on pin 3 pressed");
     
-    if (detectionActive) {
+    if (global.detectionActive) {
       // Add button 1 press to sequence
-      buttonPressSequence.push(1);
-      console.log("Button sequence:", buttonPressSequence);
+      global.buttonPressSequence.push(1);
+      console.log("Button sequence:", global.buttonPressSequence);
       
       // Check if code is complete
       checkSecurityCode();
