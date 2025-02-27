@@ -1,0 +1,25 @@
+{
+  "name": "arduino-npm-projet",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "servient": "node servient.js",
+    "broker": "node mqtt-broker.js",
+    "start-all": "node start-all.js"
+  },
+  "keywords": ["arduino", "security", "mqtt", "iot"],
+  "author": "",
+  "license": "ISC",
+  "description": "Arduino-based security system with MQTT communication",
+  "dependencies": {
+    "express": "^4.21.2",
+    "johnny-five": "^2.1.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "mqtt": "^5.3.5",
+    "body-parser": "^1.20.2",
+    "aedes": "^0.50.0"
+  }
+}

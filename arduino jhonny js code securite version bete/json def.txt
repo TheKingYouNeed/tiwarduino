@@ -1,0 +1,139 @@
+{
+  "@context": "https://www.w3.org/2022/wot/td/v1.1",
+  "id": "https://iga.ac.ma/tiw/iot/2025/groupeX",
+  "@type": "Thing",
+  "title": "Smart Iot",
+  "description": "TP TIW IoT 2025 : alarme pour maison connectée",
+  "securityDefinitions": {
+    "nosec_sc": {
+      "scheme": "nosec"
+    }
+  },
+  "security": [
+    "nosec_sc"
+  ],
+  "properties": {
+    "porte": {
+      "type": "string",
+      "readOnly": true,
+      "forms": [
+        {
+          "op": "readproperty",
+          "href": "http://127.0.0.1/porte",
+          "htv:methodName": "GET"
+        }
+      ]
+    },
+    "alarme": {
+      "type": "boolean",
+      "readOnly": true,
+      "forms": [
+        {
+          "op": "readproperty",
+          "href": "http://127.0.0.1/alarme",
+          "htv:methodName": "GET"
+        }
+      ]
+    },
+    "personne": {
+      "type": "string",
+      "readOnly": true,
+      "forms": [
+        {
+          "op": "readproperty",
+          "href": "http://127.0.0.1/personne",
+          "htv:methodName": "GET"
+        }
+      ]
+    }
+  },
+  "actions": {
+    "ouvrir": {
+      "forms": [
+        {
+          "op": "invokeaction",
+          "href": "http://127.0.0.1/ouvrir",
+          "htv:methodName": "POST"
+        }
+      ]
+    },
+    "desactiver": {
+      "forms": [
+        {
+          "op": "invokeaction",
+          "href": "http://127.0.0.1/desactiver",
+          "htv:methodName": "POST"
+        }
+      ]
+    }
+  },
+  "events": {
+    "detection": {
+      "description": "Une personne est passée devant le détecteur de personne",
+      "data": {
+        "type": "string",
+        "description": "Date de la détection"
+      },
+      "forms": [
+        {
+          "href": "http://127.0.0.1/detection",
+          "contentType": "application/json",
+          "op": [
+            "subscribeevent"
+          ],
+          "htv:methodName": "POST"
+        },
+        {
+          "href": "http://127.0.0.1/detection",
+          "contentType": "application/json",
+          "op": [
+            "unsubscribeevent"
+          ],
+          "htv:methodName": "DELETE"
+        }
+      ]
+    },
+    "alarme": {
+      "description": "L'alarme a été déclenchée",
+      "data": {
+        "type": "string",
+        "description": "Date de l'alarme"
+      },
+      "forms": [
+        {
+          "href": "http://127.0.0.1/alarme",
+          "contentType": "application/json",
+          "op": "subscribeevent",
+          "htv:methodName": "POST"
+        },
+        {
+          "href": "http://127.0.0.1/alarme",
+          "contentType": "application/json",
+          "op": "unsubscribeevent",
+          "htv:methodName": "DELETE"
+        }
+      ]
+    }
+  },
+  "code": {
+    "description": " code entré ",
+    "data": {
+      "type": "object",
+      "description": "Date et nom de la personne"
+    },
+    "forms": [
+      {
+        "href": "http://127.0.0.1/code",
+        "contentType": "application/json",
+        "op": "subscribeevent",
+        "htv:methodName": "POST"
+      },
+      {
+        "href": "http://127.0.0.1/code",
+          "contentType": "application/json",
+        "op": "unsubscribeevent",
+        "htv:methodName": "DELETE"
+      }
+    ]
+  }
+}
