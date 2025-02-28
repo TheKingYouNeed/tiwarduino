@@ -124,6 +124,10 @@ Chaque personne a son propre code de sécurité:
 3. En mode Alarme, lorsqu'une présence est détectée, entrer le code correct dans les 30 secondes
 4. Contrôler la porte depuis l'interface web
 
+## Documentation
+
+Une documentation détaillée du projet est disponible dans le fichier `documentation.html`. Vous pouvez y accéder en ouvrant ce fichier dans votre navigateur ou en visitant http://localhost:3000/documentation.html lorsque le serveur est en cours d'exécution.
+
 ## Dépendances
 
 - express: Framework de serveur web
