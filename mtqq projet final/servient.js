@@ -304,31 +304,31 @@ board.on("ready", () => {
     // Publish state change
     publishState();
     publishEvent('detection', { 
-      message: 'Presence detected! Enter security code using Button 1 and Button 2 at any time',
-      codeInfo: 'Use Button 1 for digit 1 and Button 2 for digit 2. Enter a 4-digit code.'
+      message: 'Présence détectée ! Entrez un code à 4 chiffres à tout moment en utilisant le Bouton 1 (pour le chiffre 1) et le Bouton 2 (pour le chiffre 2)',
+      codeInfo: 'Utilisez le Bouton 1 pour le chiffre 1 et le Bouton 2 pour le chiffre 2. Entrez un code à 4 chiffres.'
     });
     
-    console.log("Presence detected! Enter 4-digit code at any time using Button 1 (for digit 1) and Button 2 (for digit 2)");
-    console.log("Available codes: 1212 (John), 2121 (Alice), 1122 (Bob), 2211 (Emma)");
+    console.log("Présence détectée ! Entrez un code à 4 chiffres à tout moment en utilisant le Bouton 1 (pour le chiffre 1) et le Bouton 2 (pour le chiffre 2)");
+    console.log("Codes disponibles : 1212 (John), 2121 (Alice), 1122 (Bob), 2211 (Emma)");
     
-    // First phase: 10 seconds with light on
+    // First phase: 30 seconds with light on
     alarmCountdown = setTimeout(() => {
-      // If code wasn't entered correctly within 10 seconds, start blinking and notify intruder
+      // If code wasn't entered correctly within 30 seconds, start blinking and notify intruder
       if (alarmState === 'detection') {
-        console.log("No code entered within 10 seconds, starting blink phase...");
+        console.log("No code entered within 30 seconds, starting blink phase...");
         
-        // Start LED blinking after 10 seconds
+        // Start LED blinking after 30 seconds
         detectionBlinkInterval = setInterval(() => {
           if (led) led.toggle();
         }, 300);
         
         // Send intruder notification
-        publishEvent('intruderAlert', { message: 'Intruder detected! No valid code entered.' });
+        publishEvent('intruderAlert', { message: 'Intrus détecté ! Aucun code valide n\'a été entré.' });
         
         // Set another 20-second countdown before full alarm
         setTimeout(() => {
           if (alarmState === 'detection') {
-            console.log("No code entered within 30 seconds total, activating full alarm...");
+            console.log("Aucun code entré dans les 50 secondes au total, activation de l'alarme complète...");
             
             // Clear blink interval before starting alarm
             if (detectionBlinkInterval) {
@@ -341,7 +341,7 @@ board.on("ready", () => {
           }
         }, 20000);
       }
-    }, 10000);
+    }, 30000);
   }
   
   // Function to check security code
@@ -375,14 +375,14 @@ board.on("ready", () => {
         publishEvent('codeEntry', { 
           success: true, 
           person: person,
-          message: `Welcome, ${person}!`,
+          message: `Bienvenue, ${person} !`,
           code: codeString
         });
         
         // Also publish a person detected event
         publishEvent('personDetected', {
           name: person,
-          message: `Welcome, ${person}!`
+          message: `Bienvenue, ${person} !`
         });
         
         // Reset button sequence after processing
@@ -399,7 +399,7 @@ board.on("ready", () => {
         // Publish event for invalid code
         publishEvent('codeEntry', { 
           success: false, 
-          message: "Invalid security code!",
+          message: "Code de sécurité invalide !",
           code: codeString
         });
         

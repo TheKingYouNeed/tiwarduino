@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="fr-FR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Moniteur MQTT - Système de Sécurité Arduino</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+      color: #333;
+    }
+    h1, h2 {
+      color: #2c3e50;
+      margin-bottom: 20px;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .card {
+      background-color: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .card-header {
+      background-color: #3498db;
+      color: white;
+      padding: 10px 15px;
+      border-radius: 8px 8px 0 0;
+      margin: -20px -20px 15px -20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .message-container {
+      height: 400px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      padding: 10px;
+      background-color: #f9f9f9;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+    .message {
+      margin-bottom: 10px;
+      padding: 8px;
+      border-radius: 4px;
+    }
+    .message.incoming {
+      background-color: #e8f4fd;
+      border-left: 4px solid #3498db;
+    }
+    .message.outgoing {
+      background-color: #f0fff0;
+      border-left: 4px solid #2ecc71;
+    }
+    .message-topic {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+    .message-payload {
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .message-time {
+      font-size: 0.8em;
+      color: #7f8c8d;
+      text-align: right;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    button {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    .clear-btn {
+      background-color: #e74c3c;
+    }
+    .clear-btn:hover {
+      background-color: #c0392b;
+    }
+    .filter-container {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+    }
+    .filter-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 7px;
+      border-radius: 10px;
+      font-size: 0.8em;
+      font-weight: bold;
+      margin-left: 5px;
+    }
+    .badge.incoming {
+      background-color: #3498db;
+      color: white;
+    }
+    .badge.outgoing {
+      background-color: #2ecc71;
+      color: white;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-top: 20px;
+      color: #3498db;
+      text-decoration: none;
+    }
+    .nav-link:hover {
+      text-decoration: underline;
+    }
+    .topic-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 0.75em;
+      margin-right: 5px;
+    }
+    .topic-badge.events {
+      background-color: #e74c3c;
+      color: white;
+    }
+    .topic-badge.state {
+      background-color: #f39c12;
+      color: white;
+    }
+    .topic-badge.commands {
+      background-color: #9b59b6;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <h1>Moniteur MQTT - Système de Sécurité Arduino</h1>
+  
+  <a href="/" class="nav-link">← Retour à l'interface principale</a>
+  
+  <div class="container">
+    <div class="card">
+      <div class="card-header">
+        <h2>Messages MQTT en Temps Réel</h2>
+        <div>
+          <span class="badge incoming">Entrants</span>
+          <span class="badge outgoing">Sortants</span>
+        </div>
+      </div>
+      
+      <div class="filter-container">
+        <div class="filter-item">
+          <input type="checkbox" id="filter-events" checked>
+          <label for="filter-events">
+            <span class="topic-badge events">events</span> servient/events
+          </label>
+        </div>
+        <div class="filter-item">
+          <input type="checkbox" id="filter-state" checked>
+          <label for="filter-state">
+            <span class="topic-badge state">state</span> servient/state
+          </label>
+        </div>
+        <div class="filter-item">
+          <input type="checkbox" id="filter-commands" checked>
+          <label for="filter-commands">
+            <span class="topic-badge commands">commands</span> servient/commands/*
+          </label>
+        </div>
+      </div>
+      
+      <div class="controls">
+        <button id="pause-btn">Pause</button>
+        <button id="resume-btn" disabled>Reprendre</button>
+        <button id="clear-btn" class="clear-btn">Effacer</button>
+      </div>
+      
+      <div id="messages" class="message-container"></div>
+    </div>
+  </div>
+  
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    // Connexion Socket.IO
+    const socket = io();
+    
+    // Éléments DOM
+    const messagesContainer = document.getElementById('messages');
+    const pauseBtn = document.getElementById('pause-btn');
+    const resumeBtn = document.getElementById('resume-btn');
+    const clearBtn = document.getElementById('clear-btn');
+    const filterEvents = document.getElementById('filter-events');
+    const filterState = document.getElementById('filter-state');
+    const filterCommands = document.getElementById('filter-commands');
+    
+    // État du moniteur
+    let isPaused = false;
+    let messageCount = 0;
+    const MAX_MESSAGES = 100;
+    
+    // Fonction pour déterminer la direction du message
+    function getMessageDirection(topic) {
+      if (topic.startsWith('servient/commands')) {
+        return 'outgoing';
+      } else {
+        return 'incoming';
+      }
+    }
+    
+    // Fonction pour déterminer la catégorie du topic
+    function getTopicCategory(topic) {
+      if (topic.includes('events')) return 'events';
+      if (topic.includes('state')) return 'state';
+      if (topic.includes('commands')) return 'commands';
+      return '';
+    }
+    
+    // Fonction pour formater le JSON
+    function formatJSON(json) {
+      try {
+        return JSON.stringify(JSON.parse(json), null, 2);
+      } catch (e) {
+        return json;
+      }
+    }
+    
+    // Fonction pour ajouter un message
+    function addMessage(topic, payload, timestamp = new Date().toISOString()) {
+      if (isPaused) return;
+      
+      // Vérifier les filtres
+      const category = getTopicCategory(topic);
+      if (
+        (category === 'events' && !filterEvents.checked) ||
+        (category === 'state' && !filterState.checked) ||
+        (category === 'commands' && !filterCommands.checked)
+      ) {
+        return;
+      }
+      
+      // Créer l'élément de message
+      const messageEl = document.createElement('div');
+      const direction = getMessageDirection(topic);
+      messageEl.className = `message ${direction}`;
+      
+      // Ajouter le badge de catégorie
+      const categoryBadge = category ? `<span class="topic-badge ${category}">${category}</span>` : '';
+      
+      // Formater le contenu
+      messageEl.innerHTML = `
+        <div class="message-topic">${categoryBadge}${topic}</div>
+        <div class="message-payload">${formatJSON(payload)}</div>
+        <div class="message-time">${new Date(timestamp).toLocaleTimeString()}</div>
+      `;
+      
+      // Ajouter au conteneur
+      messagesContainer.appendChild(messageEl);
+      
+      // Faire défiler vers le bas
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      
+      // Limiter le nombre de messages
+      messageCount++;
+      if (messageCount > MAX_MESSAGES) {
+        messagesContainer.removeChild(messagesContainer.firstChild);
+        messageCount--;
+      }
+    }
+    
+    // Écouteurs d'événements pour les boutons
+    pauseBtn.addEventListener('click', () => {
+      isPaused = true;
+      pauseBtn.disabled = true;
+      resumeBtn.disabled = false;
+    });
+    
+    resumeBtn.addEventListener('click', () => {
+      isPaused = false;
+      pauseBtn.disabled = false;
+      resumeBtn.disabled = true;
+    });
+    
+    clearBtn.addEventListener('click', () => {
+      messagesContainer.innerHTML = '';
+      messageCount = 0;
+    });
+    
+    // Écouteurs pour les filtres
+    filterEvents.addEventListener('change', () => {
+      document.querySelectorAll('.message').forEach(msg => {
+        if (msg.querySelector('.topic-badge.events')) {
+          msg.style.display = filterEvents.checked ? 'block' : 'none';
+        }
+      });
+    });
+    
+    filterState.addEventListener('change', () => {
+      document.querySelectorAll('.message').forEach(msg => {
+        if (msg.querySelector('.topic-badge.state')) {
+          msg.style.display = filterState.checked ? 'block' : 'none';
+        }
+      });
+    });
+    
+    filterCommands.addEventListener('change', () => {
+      document.querySelectorAll('.message').forEach(msg => {
+        if (msg.querySelector('.topic-badge.commands')) {
+          msg.style.display = filterCommands.checked ? 'block' : 'none';
+        }
+      });
+    });
+    
+    // Écouter les événements MQTT
+    socket.on('mqtt:message', function(data) {
+      addMessage(data.topic, data.payload, data.timestamp);
+    });
+    
+    // Message initial
+    addMessage('system/info', JSON.stringify({
+      message: 'Moniteur MQTT connecté',
+      broker: 'localhost:1883'
+    }));
+  </script>
+</body>
+</html>

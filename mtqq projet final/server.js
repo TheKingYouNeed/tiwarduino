@@ -1,18 +1,62 @@
-const express = require("express");
-const bodyParser = require("body-parser");
 const http = require("http");
 const socketIo = require("socket.io");
 const mqtt = require('mqtt');
 
-// Initialize Express app
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
+// Initialize HTTP server and Socket.IO
+const server = http.createServer((req, res) => {
+  // Simple static file server for the public directory
+  const fs = require('fs');
+  const path = require('path');
+  
+  // Get the file path
+  let filePath = path.join(__dirname, 'public', req.url === '/' ? 'index.html' : req.url);
+  
+  // Check if file exists
+  fs.access(filePath, fs.constants.F_OK, (err) => {
+    if (err) {
+      res.writeHead(404);
+      res.end('File not found');
+      return;
+    }
+    
+    // Get file extension
+    const extname = path.extname(filePath);
+    let contentType = 'text/html';
+    
+    // Set content type based on file extension
+    switch (extname) {
+      case '.js':
+        contentType = 'text/javascript';
+        break;
+      case '.css':
+        contentType = 'text/css';
+        break;
+      case '.json':
+        contentType = 'application/json';
+        break;
+      case '.png':
+        contentType = 'image/png';
+        break;
+      case '.jpg':
+        contentType = 'image/jpg';
+        break;
+    }
+    
+    // Read and serve the file
+    fs.readFile(filePath, (err, content) => {
+      if (err) {
+        res.writeHead(500);
+        res.end('Server Error');
+        return;
+      }
+      
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(content, 'utf-8');
+    });
+  });
+});
 
-// Middleware
-app.use(express.static("public"));
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+const io = socketIo(server);
 
 // MQTT client setup
 const MQTT_BROKER = 'mqtt://localhost:1883'; // Change this if your broker is elsewhere
@@ -43,6 +87,14 @@ mqttClient.on('message', (topic, message) => {
     const messageObj = JSON.parse(message.toString());
     console.log(`Received message on topic ${topic}:`, messageObj);
     
+    // Émettre l'événement pour le moniteur MQTT
+    io.emit('mqtt:message', {
+      topic: topic,
+      payload: message.toString(),
+      timestamp: new Date().toISOString(),
+      direction: 'incoming'
+    });
+    
     // Handle different event types
     if (topic === 'servient/events') {
       const { event, data } = messageObj;
@@ -69,11 +121,20 @@ mqttClient.on('message', (topic, message) => {
         case 'detection':
           global.alarmActive = true;
           global.alarmMessage = 'Présence détectée!';
-          global.systemStatus = 'Entrez le code de sécurité dans 10 secondes';
+          global.systemStatus = 'Entrez le code de sécurité dans 30 secondes';
+          
+          // Send alarm status update
           io.emit("alarmStatus", { 
             alarmActive: true, 
             message: global.alarmMessage,
             status: global.systemStatus
+          });
+          
+          // Also send a dedicated presence detection notification
+          io.emit("notification", {
+            type: "warning",
+            message: "Une présence a été détectée ! Entrez le code de sécurité immédiatement.",
+            isPresenceDetection: true
           });
           break;
           
@@ -180,59 +241,21 @@ mqttClient.on('message', (topic, message) => {
   }
 });
 
-// Define API endpoints for async requests
-app.get('/sensor-data', (req, res) => {
-  res.json(global.sensorData);
-});
-
-app.get('/alarm-status', (req, res) => {
-  res.json({
-    alarmActive: global.alarmActive || false,
-    message: global.alarmMessage || 'Inactif',
-    status: global.systemStatus || 'Système en mode normal',
-    doorState: global.doorState,
-    detectedPerson: global.detectedPerson
+// Fonction pour publier un message MQTT et le transmettre au moniteur
+function publishMQTT(topic, message) {
+  const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+  
+  // Publier le message MQTT
+  mqttClient.publish(topic, messageStr);
+  
+  // Émettre l'événement pour le moniteur MQTT
+  io.emit('mqtt:message', {
+    topic: topic,
+    payload: messageStr,
+    timestamp: new Date().toISOString(),
+    direction: 'outgoing'
   });
-});
-
-app.post('/update-mode', (req, res) => {
-  const { mode } = req.body;
-  if (mode && (mode === 'simple' || mode === 'alarm')) {
-    console.log(`Changing mode from ${global.operationMode} to ${mode}`);
-    
-    // Update the mode locally
-    global.operationMode = mode;
-    
-    // Send mode change command to servient via MQTT
-    mqttClient.publish('servient/commands/mode', JSON.stringify({ mode }));
-    
-    res.json({ success: true, mode });
-    
-    // Notify all clients about the mode change
-    io.emit("modeChange", { mode });
-  } else {
-    res.status(400).json({ success: false, error: 'Invalid mode' });
-  }
-});
-
-// New endpoint to control the door
-app.post('/door-control', (req, res) => {
-  const { action } = req.body;
-  if (action && (action === 'open' || action === 'close')) {
-    // Send door control command to servient via MQTT
-    mqttClient.publish('servient/commands/door', JSON.stringify({ action }));
-    res.json({ success: true, action });
-  } else {
-    res.status(400).json({ success: false, error: 'Invalid action' });
-  }
-});
-
-// New endpoint to stop the alarm
-app.post('/stop-alarm', (req, res) => {
-  // Send stop alarm command to servient via MQTT
-  mqttClient.publish('servient/commands/alarm', JSON.stringify({ action: 'stop' }));
-  res.json({ success: true });
-});
+}
 
 // Socket.IO connection handler
 io.on("connection", (socket) => {
@@ -248,6 +271,78 @@ io.on("connection", (socket) => {
     detectedPerson: global.detectedPerson
   });
   socket.emit("modeChange", { mode: global.operationMode });
+  socket.emit("sensorData", global.sensorData);
+  
+  // Handle REST API replacements with Socket.IO events
+  
+  // Replace /sensor-data GET endpoint
+  socket.on("getSensorData", () => {
+    socket.emit("sensorData", global.sensorData);
+  });
+  
+  // Replace /alarm-status GET endpoint
+  socket.on("getAlarmStatus", () => {
+    socket.emit("alarmStatus", {
+      alarmActive: global.alarmActive || false,
+      message: global.alarmMessage || 'Inactif',
+      status: global.systemStatus || 'Système en mode normal',
+      doorState: global.doorState,
+      detectedPerson: global.detectedPerson
+    });
+  });
+  
+  // Listen for mode update events
+  socket.on("updateMode", (data) => {
+    const { mode } = data;
+    if (mode && (mode === 'simple' || mode === 'alarm')) {
+      console.log(`Changing mode from ${global.operationMode} to ${mode}`);
+      global.operationMode = mode;
+      
+      // Publish mode change command to MQTT
+      publishMQTT('servient/commands/mode', JSON.stringify({ mode }));
+      
+      // Broadcast mode change to all clients
+      io.emit("modeChange", { mode });
+      
+      // Send success response
+      socket.emit("modeUpdateResponse", { success: true, mode });
+    } else {
+      socket.emit("modeUpdateResponse", { success: false, error: 'Invalid mode' });
+    }
+  });
+  
+  // Listen for door control events
+  socket.on("doorControl", (data) => {
+    const { action } = data;
+    if (action && (action === 'open' || action === 'close')) {
+      // Publish door control command to MQTT
+      publishMQTT('servient/commands/door', JSON.stringify({ action }));
+      
+      socket.emit("doorControlResponse", { success: true, action });
+    } else {
+      socket.emit("doorControlResponse", { success: false, error: 'Invalid action' });
+    }
+  });
+  
+  // Listen for stop alarm events
+  socket.on("stopAlarm", () => {
+    // Publish stop alarm command to MQTT
+    publishMQTT('servient/commands/alarm', JSON.stringify({ action: 'stop' }));
+    
+    global.alarmActive = false;
+    global.alarmMessage = 'Inactif';
+    global.systemStatus = 'Système en mode normal';
+    
+    io.emit("alarmStatus", { 
+      alarmActive: global.alarmActive, 
+      message: global.alarmMessage,
+      status: global.systemStatus,
+      doorState: global.doorState,
+      detectedPerson: global.detectedPerson
+    });
+    
+    socket.emit("stopAlarmResponse", { success: true });
+  });
   
   // Handle disconnection
   socket.on("disconnect", () => {

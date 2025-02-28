@@ -1,0 +1,2290 @@
+<!DOCTYPE html>
+<html lang="fr-FR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentation du Serveur Web - Système de Sécurité Arduino</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        h1, h2, h3 {
+            color: #2c3e50;
+            margin-top: 30px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            border-left: 4px solid #3498db;
+            padding-left: 10px;
+        }
+        .container {
+            background-color: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        code {
+            background-color: #f8f8f8;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: Consolas, Monaco, 'Andale Mono', monospace;
+            border: 1px solid #e1e1e8;
+        }
+        pre {
+            background-color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border: 1px solid #e1e1e8;
+        }
+        .highlight {
+            background-color: #fffacd;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #ffd700;
+        }
+        .architecture-diagram {
+            text-align: center;
+            margin: 30px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Documentation du Serveur Web - Système de Sécurité Arduino</h1>
+        
+        <h2>1. Introduction</h2>
+        <p>
+            Ce document présente les décisions architecturales et techniques prises dans le développement du serveur Web pour le système de sécurité Arduino. Le serveur joue un rôle central dans notre architecture, agissant comme intermédiaire entre l'Arduino (via MQTT) et l'interface utilisateur (via Socket.IO).
+        </p>
+
+        <h2>2. Architecture Globale</h2>
+        <div class="architecture-diagram">
+            <img src="https://via.placeholder.com/800x400?text=Architecture+du+Système" alt="Diagramme d'architecture" style="max-width: 100%;">
+            <p><em>Représentation simplifiée de l'architecture du système</em></p>
+        </div>
+        
+        <p>
+            Notre architecture se compose de trois composants principaux :
+        </p>
+        <ul>
+            <li><strong>Arduino (Servient)</strong> : Gère les capteurs, les actionneurs et la logique de détection</li>
+            <li><strong>Serveur Web</strong> : Centralise les communications et la logique métier</li>
+            <li><strong>Interface Utilisateur</strong> : Permet à l'utilisateur d'interagir avec le système</li>
+        </ul>
+
+        <h2>3. Décisions Architecturales Clés</h2>
+        
+        <h3>3.1 Utilisation de MQTT</h3>
+        <p>
+            Nous avons choisi d'utiliser MQTT comme protocole de communication entre l'Arduino et le serveur pour plusieurs raisons :
+        </p>
+        <ul>
+            <li>Faible empreinte mémoire, adapté aux appareils contraints comme l'Arduino</li>
+            <li>Modèle publish/subscribe qui permet une communication asynchrone</li>
+            <li>Fiabilité avec différents niveaux de QoS (Quality of Service)</li>
+            <li>Capacité à fonctionner sur des réseaux à faible bande passante</li>
+        </ul>
+        
+        <div class="highlight">
+            <p><strong>Décision technique :</strong> Nous avons structuré les topics MQTT de manière hiérarchique pour séparer clairement les différents types de messages :</p>
+            <ul>
+                <li><code>servient/events</code> : Pour les événements générés par l'Arduino</li>
+                <li><code>servient/state</code> : Pour les mises à jour d'état</li>
+                <li><code>servient/commands/...</code> : Pour les commandes envoyées à l'Arduino</li>
+            </ul>
+        </div>
+
+        <h3>3.2 Socket.IO pour la Communication en Temps Réel</h3>
+        <p>
+            Pour la communication entre le serveur et l'interface utilisateur, nous avons opté pour Socket.IO qui offre :
+        </p>
+        <ul>
+            <li>Communication bidirectionnelle en temps réel</li>
+            <li>Reconnexion automatique en cas de perte de connexion</li>
+            <li>Support de différents transports (WebSockets, polling, etc.)</li>
+            <li>API simple et événementielle</li>
+        </ul>
+
+        <h2>4. Logique Métier dans le Serveur</h2>
+        
+        <h3>4.1 Gestion des États Globaux</h3>
+        <p>
+            Le serveur maintient l'état global du système à travers plusieurs variables :
+        </p>
+        <pre>
+// Variables d'état globales
+global.boardConnected = false;
+global.operationMode = 'simple';  // 'simple' ou 'alarm'
+global.alarmActive = false;
+global.alarmMessage = 'Inactif';
+global.systemStatus = 'Système en mode normal';
+global.doorState = 'closed';
+global.detectedPerson = null;
+global.sensorData = { value: 'N/A', ledState: 'N/A' };</pre>
+        
+        <p>
+            Cette approche centralisée permet de :
+        </p>
+        <ul>
+            <li>Maintenir une source unique de vérité pour l'état du système</li>
+            <li>Simplifier la synchronisation entre les différents clients</li>
+            <li>Faciliter la reprise après une déconnexion</li>
+        </ul>
+
+        <h3>4.2 Traitement des Événements MQTT</h3>
+        <p>
+            Le serveur traite les messages MQTT et met à jour l'état global en conséquence. Voici un exemple de traitement d'événement de détection :
+        </p>
+        <pre>
+case 'detection':
+  global.alarmActive = true;
+  global.alarmMessage = 'Présence détectée!';
+  global.systemStatus = 'Entrez le code de sécurité dans 30 secondes';
+  
+  // Send alarm status update
+  io.emit("alarmStatus", { 
+    alarmActive: true, 
+    message: global.alarmMessage,
+    status: global.systemStatus
+  });
+  
+  // Also send a dedicated presence detection notification
+  io.emit("notification", {
+    type: "warning",
+    message: "Une présence a été détectée ! Entrez le code de sécurité immédiatement.",
+    isPresenceDetection: true
+  });
+  break;</pre>
+        
+        <div class="highlight">
+            <p><strong>Décision métier :</strong> Nous avons choisi de séparer la notification de détection de présence en deux parties :</p>
+            <ol>
+                <li>Une mise à jour de l'état global via <code>alarmStatus</code></li>
+                <li>Une notification spécifique et temporaire via <code>notification</code></li>
+            </ol>
+            <p>Cette approche améliore l'expérience utilisateur en fournissant à la fois une information persistante dans l'interface et une alerte visuelle immédiate.</p>
+        </div>
+
+        <h3>4.3 Gestion de la Sécurité</h3>
+        <p>
+            Pour la gestion de l'alarme, notre code implémente plusieurs phases progressives :
+        </p>
+        <table>
+            <tr>
+                <th>Phase</th>
+                <th>Durée</th>
+                <th>Action</th>
+            </tr>
+            <tr>
+                <td>Détection initiale</td>
+                <td>Immédiat</td>
+                <td>Notification à l'utilisateur, LED allumée, attente de code</td>
+            </tr>
+            <tr>
+                <td>Phase de clignotement</td>
+                <td>Après 30 secondes</td>
+                <td>LED clignotante (intervalle de 300ms), notification d'intrusion</td>
+            </tr>
+            <tr>
+                <td>Alarme complète</td>
+                <td>Après 50 secondes au total</td>
+                <td>Activation de l'alarme complète avec notification</td>
+            </tr>
+        </table>
+        
+        <div class="highlight">
+            <p><strong>Décision métier :</strong> Nous avons délibérément choisi d'implémenter un délai de 30 secondes avant l'activation de la phase de clignotement, suivi d'un délai supplémentaire de 20 secondes avant l'activation de l'alarme complète. Cette approche progressive permet :</p>
+            <ul>
+                <li>De donner suffisamment de temps aux utilisateurs autorisés pour entrer leur code (30 secondes)</li>
+                <li>D'avertir visuellement (par le clignotement de la LED) qu'une alarme est imminente</li>
+                <li>De fournir un délai supplémentaire de 20 secondes pour réagir avant le déclenchement de l'alarme complète</li>
+            </ul>
+        </div>
+
+        <h3>4.4 Arrêt de l'Alarme</h3>
+        <p>
+            Nous avons implémenté deux mécanismes pour arrêter l'alarme :
+        </p>
+        <ol>
+            <li><strong>Saisie du code correct</strong> : Arrête l'alarme et identifie l'utilisateur</li>
+            <li><strong>Bouton d'arrêt d'urgence</strong> : Permet d'arrêter l'alarme même sans code (fausse alerte)</li>
+        </ol>
+        
+        <pre>
+// Gestion de l'événement "stopAlarm" via Socket.IO
+socket.on("stopAlarm", () => {
+  // Envoi de la commande d'arrêt d'alarme au servient via MQTT
+  mqttClient.publish('servient/commands/alarm', JSON.stringify({ action: 'stop' }));
+  
+  // Mise à jour de l'état global
+  global.alarmActive = false;
+  global.alarmMessage = 'Inactif';
+  global.systemStatus = 'Système en mode normal';
+  
+  // Notification à tous les clients du changement d'état de l'alarme
+  io.emit("alarmStatus", { 
+    alarmActive: global.alarmActive, 
+    message: global.alarmMessage,
+    status: global.systemStatus,
+    doorState: global.doorState,
+    detectedPerson: global.detectedPerson
+  });
+  
+  // Envoi de la réponse de succès
+  socket.emit("stopAlarmResponse", { success: true });
+});</pre>
+
+        <div class="highlight">
+            <p><strong>Décision métier :</strong> L'ajout d'un bouton d'arrêt d'urgence répond à un besoin réel : pouvoir désactiver rapidement une alarme en cas de fausse détection, sans avoir à entrer un code. Cette fonctionnalité améliore l'expérience utilisateur tout en maintenant un niveau de sécurité acceptable.</p>
+        </div>
+
+        <h2>5. Gestion des Communications</h2>
+        
+        <h3>5.1 Événements Socket.IO</h3>
+        <p>
+            Nous avons défini plusieurs types d'événements Socket.IO pour la communication avec l'interface utilisateur :
+        </p>
+        <table>
+            <tr>
+                <th>Événement</th>
+                <th>Direction</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>boardStatus</code></td>
+                <td>Serveur → Client</td>
+                <td>État de connexion de l'Arduino</td>
+            </tr>
+            <tr>
+                <td><code>alarmStatus</code></td>
+                <td>Serveur → Client</td>
+                <td>État de l'alarme et messages associés</td>
+            </tr>
+            <tr>
+                <td><code>sensorData</code></td>
+                <td>Serveur → Client</td>
+                <td>Données des capteurs</td>
+            </tr>
+            <tr>
+                <td><code>notification</code></td>
+                <td>Serveur → Client</td>
+                <td>Notifications temporaires</td>
+            </tr>
+            <tr>
+                <td><code>updateMode</code></td>
+                <td>Client → Serveur</td>
+                <td>Changement de mode (simple/alarme)</td>
+            </tr>
+            <tr>
+                <td><code>doorControl</code></td>
+                <td>Client → Serveur</td>
+                <td>Contrôle de la porte</td>
+            </tr>
+            <tr>
+                <td><code>stopAlarm</code></td>
+                <td>Client → Serveur</td>
+                <td>Arrêt de l'alarme</td>
+            </tr>
+        </table>
+
+        <h3>5.2 Traduction des Messages</h3>
+        <p>
+            Nous avons fait le choix de traduire tous les messages en français pour améliorer l'accessibilité de l'interface. Cette décision a nécessité des modifications dans plusieurs fichiers :
+        </p>
+        <ul>
+            <li>Messages dans l'interface HTML</li>
+            <li>Notifications envoyées par le serveur</li>
+            <li>Messages de log dans la console</li>
+        </ul>
+        
+        <div class="highlight">
+            <p><strong>Décision métier :</strong> La localisation complète de l'interface en français améliore l'expérience utilisateur pour notre public cible et réduit les risques d'erreur d'interprétation dans un contexte de sécurité.</p>
+        </div>
+
+        <h2>6. Optimisations et Améliorations</h2>
+        
+        <h3>6.1 Gestion des Notifications</h3>
+        <p>
+            Nous avons optimisé la gestion des notifications pour éviter de surcharger l'utilisateur :
+        </p>
+        <ul>
+            <li>Les notifications de présence détectée disparaissent après 2 secondes</li>
+            <li>Les notifications standard disparaissent après 5 secondes</li>
+            <li>Les notifications sont stylisées différemment selon leur type (info, warning, error)</li>
+        </ul>
+        
+        <pre>
+// Auto-remove after 5 seconds or 2 seconds for presence detection
+if (!sticky) {
+  setTimeout(() => {
+    notification.classList.remove('show');
+    setTimeout(() => {
+      notification.remove();
+    }, 500);
+  }, 5000);
+} else {
+  // Pour les notifications de présence détectée (sticky=true), on les supprime après 2 secondes
+  setTimeout(() => {
+    notification.classList.remove('show');
+    setTimeout(() => {
+      notification.remove();
+    }, 500);
+  }, 2000);
+}</pre>
+
+        <h3>6.2 Reconnexion Automatique</h3>
+        <p>
+            Nous avons implémenté des mécanismes de reconnexion automatique pour les connexions MQTT et Socket.IO, ce qui améliore la robustesse du système en cas de problèmes réseau temporaires.
+        </p>
+
+        <h2>7. Conclusion</h2>
+        <p>
+            Le serveur Web joue un rôle central dans notre système de sécurité Arduino, en assurant :
+        </p>
+        <ul>
+            <li>La communication entre les différents composants</li>
+            <li>La gestion centralisée de l'état du système</li>
+            <li>L'application de la logique métier de sécurité</li>
+            <li>Une interface utilisateur réactive et intuitive</li>
+        </ul>
+        <p>
+            Les décisions architecturales et techniques prises ont permis de créer un système robuste, sécurisé et facile à utiliser, tout en respectant les contraintes matérielles de l'Arduino.
+        </p>
+
+        <h2>8. Échanges de Messages MQTT</h2>
+        
+        <p>
+            Le protocole MQTT est au cœur de notre architecture de communication. Cette section détaille tous les types de messages échangés entre le servient (Arduino) et le serveur Web via le broker MQTT.
+        </p>
+        
+        <h3>8.1 Structure des Topics MQTT</h3>
+        
+        <p>
+            Nous avons organisé les topics MQTT selon une structure hiérarchique claire qui reflète la nature des messages :
+        </p>
+        
+        <table>
+            <tr>
+                <th>Topic</th>
+                <th>Direction</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><code>servient/events</code></td>
+                <td>Servient → Serveur</td>
+                <td>Événements générés par l'Arduino (détection, changement d'état, etc.)</td>
+            </tr>
+            <tr>
+                <td><code>servient/state</code></td>
+                <td>Servient → Serveur</td>
+                <td>État global du système (porte, alarme, mode, etc.)</td>
+            </tr>
+            <tr>
+                <td><code>servient/commands/mode</code></td>
+                <td>Serveur → Servient</td>
+                <td>Commandes pour changer le mode de fonctionnement</td>
+            </tr>
+            <tr>
+                <td><code>servient/commands/door</code></td>
+                <td>Serveur → Servient</td>
+                <td>Commandes pour contrôler la porte</td>
+            </tr>
+            <tr>
+                <td><code>servient/commands/alarm</code></td>
+                <td>Serveur → Servient</td>
+                <td>Commandes pour gérer l'alarme</td>
+            </tr>
+        </table>
+        
+        <h3>8.2 Messages Publiés par le Servient (Arduino)</h3>
+        
+        <h4>8.2.1 État du Système (<code>servient/state</code>)</h4>
+        
+        <p>
+            Le servient publie régulièrement l'état global du système sur le topic <code>servient/state</code>. Ce message contient toutes les informations nécessaires pour synchroniser l'état du système avec le serveur Web.
+        </p>
+        
+        <pre>
+// Fonction pour publier l'état sur MQTT
+function publishState() {
+  client.publish('servient/state', JSON.stringify({
+    doorState: doorState,
+    alarmState: alarmState,
+    detectedPerson: detectedPerson,
+    operationMode: operationMode,
+    timestamp: new Date().toISOString()
+  }));
+}</pre>
+        
+        <p>
+            Ce message est publié :
+        </p>
+        <ul>
+            <li>Au démarrage du système</li>
+            <li>Après chaque changement d'état significatif</li>
+            <li>En réponse à certaines commandes</li>
+        </ul>
+        
+        <h4>8.2.2 Événements (<code>servient/events</code>)</h4>
+        
+        <p>
+            Le servient publie différents types d'événements sur le topic <code>servient/events</code>. Chaque événement a un type spécifique et des données associées.
+        </p>
+        
+        <pre>
+// Fonction pour publier des événements sur MQTT
+function publishEvent(eventType, data) {
+  client.publish('servient/events', JSON.stringify({
+    event: eventType,
+    data: data,
+    timestamp: new Date().toISOString()
+  }));
+}</pre>
+        
+        <table>
+            <tr>
+                <th>Type d'événement</th>
+                <th>Description</th>
+                <th>Exemple de données</th>
+            </tr>
+            <tr>
+                <td><code>boardStatus</code></td>
+                <td>État de connexion de l'Arduino</td>
+                <td><pre>{ "connected": true }</pre></td>
+            </tr>
+            <tr>
+                <td><code>modeChange</code></td>
+                <td>Changement de mode de fonctionnement</td>
+                <td><pre>{ "mode": "alarm" }</pre></td>
+            </tr>
+            <tr>
+                <td><code>doorControl</code></td>
+                <td>Changement d'état de la porte</td>
+                <td><pre>{ 
+  "action": "open", 
+  "state": "open" 
+}</pre></td>
+            </tr>
+            <tr>
+                <td><code>detection</code></td>
+                <td>Détection de présence</td>
+                <td><pre>{ 
+  "message": "Présence détectée ! Entrez un code...",
+  "codeInfo": "Utilisez le Bouton 1 pour le chiffre 1..." 
+}</pre></td>
+            </tr>
+            <tr>
+                <td><code>intruderAlert</code></td>
+                <td>Alerte d'intrusion</td>
+                <td><pre>{ 
+  "message": "Intrus détecté ! Aucun code valide n'a été entré." 
+}</pre></td>
+            </tr>
+            <tr>
+                <td><code>alarmChange</code></td>
+                <td>Changement d'état de l'alarme</td>
+                <td><pre>{ "state": "active" }</pre></td>
+            </tr>
+            <tr>
+                <td><code>codeEntry</code></td>
+                <td>Saisie d'un code de sécurité</td>
+                <td><pre>{ 
+  "success": true, 
+  "person": "John",
+  "message": "Bienvenue, John !",
+  "code": "1212" 
+}</pre></td>
+            </tr>
+            <tr>
+                <td><code>personDetected</code></td>
+                <td>Personne identifiée par son code</td>
+                <td><pre>{ 
+  "name": "John",
+  "message": "Bienvenue, John !" 
+}</pre></td>
+            </tr>
+            <tr>
+                <td><code>buttonPress</code></td>
+                <td>Appui sur un bouton</td>
+                <td><pre>{ 
+  "button": 1,
+  "sequence": [1, 2, 1, 2] 
+}</pre></td>
+            </tr>
+            <tr>
+                <td><code>sensorData</code></td>
+                <td>Données des capteurs</td>
+                <td><pre>{ 
+  "value": 512,
+  "ledState": "on",
+  "mode": "alarm" 
+}</pre></td>
+            </tr>
+            <tr>
+                <td><code>error</code></td>
+                <td>Erreur survenue sur l'Arduino</td>
+                <td><pre>{ "message": "Erreur de communication avec le capteur" }</pre></td>
+            </tr>
+        </table>
+        
+        <p>
+            Structure générique d'un message d'événement :
+        </p>
+        
+        <pre>
+{
+  "event": "typeEvenement",
+  "data": {
+    // Données spécifiques à l'événement
+  },
+  "timestamp": "2025-02-28T10:15:30.123Z"
+}</pre>
+        
+        <h3>8.3 Messages Reçus par le Servient (Arduino)</h3>
+        
+        <h4>8.3.1 Commandes de Mode (<code>servient/commands/mode</code>)</h4>
+        
+        <p>
+            Le servient s'abonne au topic <code>servient/commands/mode</code> pour recevoir les commandes de changement de mode.
+        </p>
+        
+        <pre>
+{
+  "mode": "alarm" // "simple" ou "alarm"
+}</pre>
+        
+        <p>
+            En réponse à cette commande, le servient :
+        </p>
+        <ol>
+            <li>Change son mode de fonctionnement</li>
+            <li>Ajuste le comportement des capteurs et actionneurs en conséquence</li>
+            <li>Publie un événement <code>modeChange</code></li>
+            <li>Met à jour et publie son état global</li>
+        </ol>
+        
+        <h4>8.3.2 Commandes de Porte (<code>servient/commands/door</code>)</h4>
+        
+        <p>
+            Le servient s'abonne au topic <code>servient/commands/door</code> pour recevoir les commandes de contrôle de la porte.
+        </p>
+        
+        <pre>
+{
+  "action": "open" // "open" ou "close"
+}</pre>
+        
+        <p>
+            En réponse à cette commande, le servient :
+        </p>
+        <ol>
+            <li>Actionne le servo-moteur pour ouvrir ou fermer la porte</li>
+            <li>Met à jour l'état de la porte</li>
+            <li>Publie un événement <code>doorControl</code></li>
+            <li>Met à jour et publie son état global</li>
+        </ol>
+        
+        <p>
+            Pour la commande "open", le servient met également en place un délai de fermeture automatique après 5 secondes.
+        </p>
+        
+        <h4>8.3.3 Commandes d'Alarme (<code>servient/commands/alarm</code>)</h4>
+        
+        <p>
+            Le servient s'abonne au topic <code>servient/commands/alarm</code> pour recevoir les commandes de gestion de l'alarme.
+        </p>
+        
+        <pre>
+{
+  "action": "stop" // Actuellement, seule l'action "stop" est implémentée
+}</pre>
+        
+        <p>
+            En réponse à cette commande, le servient :
+        </p>
+        <ol>
+            <li>Arrête l'alarme en cours (son, clignotement LED)</li>
+            <li>Réinitialise l'état de l'alarme</li>
+            <li>Publie un événement <code>alarmChange</code></li>
+            <li>Met à jour et publie son état global</li>
+        </ol>
+        
+        <h3>8.4 Messages Reçus par le Serveur Web</h3>
+        
+        <p>
+            Le serveur Web s'abonne aux topics <code>servient/events</code> et <code>servient/state</code> pour recevoir les mises à jour du servient.
+        </p>
+        
+        <h4>8.4.1 Traitement des Événements</h4>
+        
+        <p>
+            Lorsque le serveur reçoit un message sur le topic <code>servient/events</code>, il :
+        </p>
+        <ol>
+            <li>Parse le message JSON pour extraire le type d'événement et les données</li>
+            <li>Transmet l'événement aux clients connectés via Socket.IO</li>
+            <li>Effectue des traitements spécifiques selon le type d'événement</li>
+        </ol>
+        
+        <p>
+            Voici le code réel de traitement pour l'événement <code>detection</code> :
+        </p>
+        
+        <pre>
+// Traitement des messages MQTT entrants
+mqttClient.on('message', (topic, message) => {
+  try {
+    const messageObj = JSON.parse(message.toString());
+    console.log(`Received message on topic ${topic}:`, messageObj);
+    
+    // Gestion des différents types d'événements
+    if (topic === 'servient/events') {
+      const { event, data } = messageObj;
+      
+      // Diffusion de l'événement à tous les clients connectés
+      io.emit(event, data);
+      
+      // Traitement spécifique selon le type d'événement
+      switch (event) {
+        case 'boardStatus':
+          global.boardConnected = data.connected;
+          io.emit("boardStatus", { connected: global.boardConnected });
+          break;
+          
+        case 'sensorData':
+          global.sensorData = { 
+            value: data.value, 
+            ledState: data.ledState,
+            mode: data.mode
+          };
+          io.emit("sensorData", global.sensorData);
+          break;
+          
+        case 'detection':
+          global.alarmActive = true;
+          global.alarmMessage = 'Présence détectée!';
+          global.systemStatus = 'Entrez le code de sécurité dans 30 secondes';
+          
+          // Envoi d'une mise à jour de l'état de l'alarme
+          io.emit("alarmStatus", { 
+            alarmActive: true, 
+            message: global.alarmMessage,
+            status: global.systemStatus
+          });
+          
+          // Envoi d'une notification dédiée pour la détection de présence
+          io.emit("notification", {
+            type: "warning",
+            message: "Une présence a été détectée ! Entrez le code de sécurité immédiatement.",
+            isPresenceDetection: true
+          });
+          break;
+          
+        // ... autres cas d'événements
+      }
+    }
+    // ... traitement d'autres topics
+  } catch (error) {
+    console.error('Error processing MQTT message:', error);
+  }
+});</pre>
+        
+        <p>
+            Cette approche permet une grande flexibilité dans la façon dont les messages MQTT sont traduits en événements WebSocket. Par exemple, un seul message MQTT peut générer plusieurs événements WebSocket distincts, comme dans le cas de la détection de présence qui génère à la fois un événement <code>alarmStatus</code> et un événement <code>notification</code>.
+        </p>
+        
+        <h4>8.4.2 Traitement des États</h4>
+        
+        <p>
+            Lorsque le serveur reçoit un message sur le topic <code>servient/state</code>, il :
+        </p>
+        <ol>
+            <li>Met à jour son état global interne</li>
+            <li>Synchronise l'interface utilisateur avec le nouvel état</li>
+        </ol>
+        
+        <h3>8.5 Messages Publiés par le Serveur Web</h3>
+        
+        <p>
+            Le serveur Web publie des commandes sur différents topics en réponse aux actions de l'utilisateur.
+        </p>
+        
+        <h4>8.5.1 Changement de Mode</h4>
+        
+        <p>
+            En réponse à une demande de changement de mode via Socket.IO, le serveur publie :
+        </p>
+        
+        <pre>
+mqttClient.publish('servient/commands/mode', JSON.stringify({ mode }));</pre>
+        
+        <h4>8.5.2 Contrôle de la Porte</h4>
+        
+        <p>
+            En réponse à une demande de contrôle de la porte via Socket.IO, le serveur publie :
+        </p>
+        
+        <pre>
+mqttClient.publish('servient/commands/door', JSON.stringify({ action }));</pre>
+        
+        <h4>8.5.3 Arrêt de l'Alarme</h4>
+        
+        <p>
+            En réponse à une demande d'arrêt d'alarme via Socket.IO, le serveur publie :
+        </p>
+        
+        <pre>
+mqttClient.publish('servient/commands/alarm', JSON.stringify({ action: 'stop' }));</pre>
+        
+        <h3>8.6 Flux de Communication Complet</h3>
+        
+        <p>
+            Voici un exemple de flux de communication complet pour un scénario de détection de présence :
+        </p>
+        
+        <ol>
+            <li><strong>Détection initiale</strong> : Le capteur de lumière détecte une présence</li>
+            <li><strong>Servient → Serveur</strong> : Publication d'un événement <code>detection</code> sur <code>servient/events</code></li>
+            <li><strong>Serveur → UI</strong> : Émission d'un événement Socket.IO <code>alarmStatus</code> et <code>notification</code></li>
+            <li><strong>UI → Utilisateur</strong> : Affichage d'une notification et mise à jour de l'interface</li>
+            <li><strong>Utilisateur → UI</strong> : L'utilisateur entre un code de sécurité via les boutons</li>
+            <li><strong>Servient → Serveur</strong> : Publication d'un événement <code>codeEntry</code> sur <code>servient/events</code></li>
+            <li><strong>Serveur → UI</strong> : Émission d'un événement Socket.IO <code>alarmStatus</code> avec le résultat</li>
+            <li><strong>UI → Utilisateur</strong> : Mise à jour de l'interface avec le résultat</li>
+        </ol>
+        
+        <div class="highlight">
+            <p><strong>Décision métier :</strong> La séparation des communications en topics distincts (events, state, commands) permet :</p>
+            <ul>
+                <li>Une meilleure organisation du code</li>
+                <li>Une séparation claire des responsabilités</li>
+                <li>Une plus grande flexibilité pour l'évolution future du système</li>
+                <li>Une meilleure traçabilité des échanges</li>
+            </ul>
+        </div>
+        
+        <h3>8.7 Avantages de l'Architecture MQTT</h3>
+        
+        <p>
+            Cette architecture basée sur MQTT offre plusieurs avantages :
+        </p>
+        
+        <ul>
+            <li><strong>Découplage</strong> : Les composants peuvent évoluer indépendamment</li>
+            <li><strong>Scalabilité</strong> : Possibilité d'ajouter facilement de nouveaux capteurs ou actionneurs</li>
+            <li><strong>Résilience</strong> : Le système peut continuer à fonctionner même si certains composants sont temporairement indisponibles</li>
+            <li><strong>Extensibilité</strong> : Facilité d'ajout de nouvelles fonctionnalités sans modifier l'architecture existante</li>
+            <li><strong>Interopérabilité</strong> : Possibilité d'intégrer des composants développés dans différentes technologies</li>
+        </ul>
+        
+        <h3>8.8 Traduction Bidirectionnelle entre MQTT et WebSocket</h3>
+        
+        <p>
+            Un aspect essentiel de notre architecture est la façon dont le serveur Web joue le rôle de "traducteur" entre le protocole MQTT (utilisé par l'Arduino) et le protocole WebSocket (utilisé par l'interface utilisateur). Cette section explique en détail ce mécanisme de traduction bidirectionnelle.
+        </p>
+        
+        <h4>8.8.1 De MQTT vers WebSocket</h4>
+        
+        <p>
+            Lorsque le serveur reçoit un message MQTT du servient (Arduino), il effectue une traduction pour transmettre l'information aux clients connectés via WebSocket (Socket.IO). Voici le processus détaillé :
+        </p>
+        
+        <ol>
+            <li><strong>Réception du message MQTT</strong> : Le serveur s'abonne aux topics MQTT pertinents et reçoit les messages du servient</li>
+            <li><strong>Parsing et traitement</strong> : Le message JSON est parsé et son contenu est analysé</li>
+            <li><strong>Mise à jour de l'état global</strong> : Si nécessaire, l'état global du serveur est mis à jour</li>
+            <li><strong>Émission d'événements Socket.IO</strong> : Le serveur émet un ou plusieurs événements Socket.IO correspondants</li>
+        </ol>
+        
+        <p>Voici le code qui illustre cette traduction pour les événements :</p>
+        
+        <pre>
+// Traitement des messages MQTT entrants
+mqttClient.on('message', (topic, message) => {
+  try {
+    const messageObj = JSON.parse(message.toString());
+    console.log(`Received message on topic ${topic}:`, messageObj);
+    
+    // Gestion des différents types d'événements
+    if (topic === 'servient/events') {
+      const { event, data } = messageObj;
+      
+      // Diffusion de l'événement à tous les clients connectés
+      io.emit(event, data);
+      
+      // Traitement spécifique selon le type d'événement
+      switch (event) {
+        case 'boardStatus':
+          global.boardConnected = data.connected;
+          io.emit("boardStatus", { connected: global.boardConnected });
+          break;
+          
+        case 'sensorData':
+          global.sensorData = { 
+            value: data.value, 
+            ledState: data.ledState,
+            mode: data.mode
+          };
+          io.emit("sensorData", global.sensorData);
+          break;
+          
+        case 'detection':
+          global.alarmActive = true;
+          global.alarmMessage = 'Présence détectée!';
+          global.systemStatus = 'Entrez le code de sécurité dans 30 secondes';
+          
+          // Envoi d'une mise à jour de l'état de l'alarme
+          io.emit("alarmStatus", { 
+            alarmActive: true, 
+            message: global.alarmMessage,
+            status: global.systemStatus
+          });
+          
+          // Envoi d'une notification dédiée pour la détection de présence
+          io.emit("notification", {
+            type: "warning",
+            message: "Une présence a été détectée ! Entrez le code de sécurité immédiatement.",
+            isPresenceDetection: true
+          });
+          break;
+          
+        // ... autres cas d'événements
+      }
+    }
+    // ... traitement d'autres topics
+  } catch (error) {
+    console.error('Error processing MQTT message:', error);
+  }
+});</pre>
+        
+        <p>
+            Cette approche permet une grande flexibilité dans la façon dont les messages MQTT sont traduits en événements WebSocket. Par exemple, un seul message MQTT peut générer plusieurs événements WebSocket distincts, comme dans le cas de la détection de présence qui génère à la fois un événement <code>alarmStatus</code> et un événement <code>notification</code>.
+        </p>
+        
+        <h4>8.8.2 De WebSocket vers MQTT</h4>
+        
+        <p>
+            Dans l'autre sens, lorsque le serveur reçoit une action de l'utilisateur via WebSocket (Socket.IO), il la traduit en message MQTT pour communiquer avec le servient (Arduino). Voici le processus :
+        </p>
+        
+        <ol>
+            <li><strong>Réception de l'événement Socket.IO</strong> : Le serveur écoute les événements Socket.IO émis par les clients</li>
+            <li><strong>Validation et traitement</strong> : Les données reçues sont validées et traitées</li>
+            <li><strong>Publication du message MQTT</strong> : Un message MQTT correspondant est créé et publié sur le topic approprié</li>
+            <li><strong>Réponse au client</strong> : Une confirmation est envoyée au client via Socket.IO</li>
+        </ol>
+        
+        <p>Voici le code qui illustre cette traduction pour le changement de mode :</p>
+        
+        <pre>
+// Gestion de l'événement "updateMode" via Socket.IO
+socket.on("updateMode", (data) => {
+  const { mode } = data;
+  if (mode && (mode === 'simple' || mode === 'alarm')) {
+    console.log(`Changing mode from ${global.operationMode} to ${mode}`);
+    
+    // Mise à jour du mode localement
+    global.operationMode = mode;
+    
+    // Envoi de la commande de changement de mode au servient via MQTT
+    mqttClient.publish('servient/commands/mode', JSON.stringify({ mode }));
+    
+    // Notification à tous les clients du changement de mode
+    io.emit("modeChange", { mode });
+    
+    // Réponse au client qui a initié le changement
+    socket.emit("modeUpdateResponse", { success: true, mode });
+  } else {
+    socket.emit("modeUpdateResponse", { success: false, error: 'Invalid mode' });
+  }
+});</pre>
+        
+        <h4>8.8.3 Enrichissement et Transformation des Messages</h4>
+        
+        <p>
+            Un aspect important de cette traduction bidirectionnelle est l'enrichissement et la transformation des messages. Le serveur ne se contente pas de relayer les messages, il les enrichit avec des informations supplémentaires ou les transforme pour les adapter au contexte de l'interface utilisateur.
+        </p>
+        
+        <p>Exemples d'enrichissement :</p>
+        <ul>
+            <li>Ajout d'informations sur l'état global du système</li>
+            <li>Traduction des messages techniques en messages compréhensibles par l'utilisateur</li>
+            <li>Formatage des données pour l'affichage dans l'interface</li>
+            <li>Agrégation de plusieurs informations en un seul message</li>
+        </ul>
+        
+        <h4>8.8.4 Gestion de l'État Global</h4>
+        
+        <p>
+            Le serveur maintient un état global qui sert de "source de vérité" pour l'ensemble du système. Cet état est mis à jour à partir des messages MQTT reçus et est utilisé pour enrichir les messages WebSocket envoyés aux clients.
+        </p>
+        
+        <pre>
+// Variables d'état globales
+global.boardConnected = false;
+global.operationMode = 'simple';  // 'simple' ou 'alarm'
+global.alarmActive = false;
+global.alarmMessage = 'Inactif';
+global.systemStatus = 'Système en mode normal';
+global.doorState = 'closed';
+global.detectedPerson = null;
+global.sensorData = { value: 'N/A', ledState: 'N/A' };</pre>
+        
+        <p>
+            Cette approche centralisée permet de garantir la cohérence des informations présentées à tous les clients connectés, même en cas de reconnexion ou de déconnexion temporaire.
+        </p>
+        
+        <div class="highlight">
+            <p><strong>Décision métier :</strong> Le choix d'implémenter une traduction bidirectionnelle entre MQTT et WebSocket, plutôt qu'une simple transmission, offre plusieurs avantages :</p>
+            <ul>
+                <li>Une meilleure expérience utilisateur grâce à des messages adaptés au contexte de l'interface</li>
+                <li>Une réduction de la complexité côté client, qui n'a pas besoin de connaître les détails du protocole MQTT</li>
+                <li>Une plus grande flexibilité pour faire évoluer indépendamment les protocoles de communication avec l'Arduino et avec l'interface utilisateur</li>
+                <li>Une centralisation de la logique métier dans le serveur, facilitant la maintenance et l'évolution du système</li>
+            </ul>
+        </div>
+        
+        <h4>8.8.5 Exemple Concret de Réception d'Événements Socket.IO</h4>
+        
+        <p>
+            Voici un exemple concret de la façon dont le serveur écoute les événements Socket.IO émis par les clients de l'interface web :
+        </p>
+        
+        <pre>
+// Configuration de la connexion Socket.IO
+io.on("connection", (socket) => {
+  console.log("New client connected");
+  
+  // Envoi de l'état initial au client qui vient de se connecter
+  socket.emit("boardStatus", { connected: global.boardConnected });
+  socket.emit("alarmStatus", { 
+    alarmActive: global.alarmActive, 
+    message: global.alarmMessage,
+    status: global.systemStatus
+  });
+  socket.emit("modeChange", { mode: global.operationMode });
+  socket.emit("sensorData", global.sensorData);
+  
+  // Écoute de l'événement "doorControl" émis par le client
+  socket.on("doorControl", (data) => {
+    const { action } = data;
+    if (action && (action === 'open' || action === 'close')) {
+      // Traduction en message MQTT pour le servient
+      mqttClient.publish('servient/commands/door', JSON.stringify({ action }));
+      
+      // Réponse au client
+      socket.emit("doorControlResponse", { success: true, action });
+    } else {
+      // Réponse d'erreur
+      socket.emit("doorControlResponse", { success: false, error: 'Invalid action' });
+    }
+  });
+  
+  // Écoute de l'événement "updateMode" émis par le client
+  socket.on("updateMode", (data) => {
+    const { mode } = data;
+    if (mode && (mode === 'simple' || mode === 'alarm')) {
+      console.log(`Changing mode from ${global.operationMode} to ${mode}`);
+      
+      // Mise à jour de l'état local
+      global.operationMode = mode;
+      
+      // Traduction en message MQTT pour le servient
+      mqttClient.publish('servient/commands/mode', JSON.stringify({ mode }));
+      
+      // Notification à tous les clients du changement
+      io.emit("modeChange", { mode });
+      
+      // Réponse au client qui a initié le changement
+      socket.emit("modeUpdateResponse", { success: true, mode });
+    } else {
+      socket.emit("modeUpdateResponse", { success: false, error: 'Invalid mode' });
+    }
+  });
+  
+  // Écoute de l'événement "stopAlarm" émis par le client
+  socket.on("stopAlarm", () => {
+    // Traduction en message MQTT pour le servient
+    mqttClient.publish('servient/commands/alarm', JSON.stringify({ action: 'stop' }));
+    
+    // Mise à jour de l'état global
+    global.alarmActive = false;
+    global.alarmMessage = 'Inactif';
+    global.systemStatus = 'Système en mode normal';
+    
+    // Notification à tous les clients du changement
+    io.emit("alarmStatus", { 
+      alarmActive: global.alarmActive, 
+      message: global.alarmMessage,
+      status: global.systemStatus,
+      doorState: global.doorState,
+      detectedPerson: global.detectedPerson
+    });
+    
+    // Réponse au client qui a initié l'arrêt
+    socket.emit("stopAlarmResponse", { success: true });
+  });
+  
+  // Autres événements écoutés par le serveur...
+  socket.on("getSensorData", () => {
+    socket.emit("sensorData", global.sensorData);
+  });
+  
+  socket.on("getAlarmStatus", () => {
+    socket.emit("alarmStatus", {
+      alarmActive: global.alarmActive || false,
+      message: global.alarmMessage || 'Inactif',
+      status: global.systemStatus || 'Système en mode normal',
+      doorState: global.doorState,
+      detectedPerson: global.detectedPerson
+    });
+  });
+  
+  // Gestion de la déconnexion du client
+  socket.on("disconnect", () => {
+    console.log("Client disconnected");
+  });
+});</pre>
+        
+        <p>
+            Cet exemple montre comment le serveur :
+        </p>
+        <ol>
+            <li><strong>Établit la connexion</strong> avec un client via Socket.IO</li>
+            <li><strong>Envoie l'état initial</strong> au client qui vient de se connecter</li>
+            <li><strong>Écoute plusieurs événements</strong> que le client peut émettre (<code>doorControl</code>, <code>updateMode</code>, <code>stopAlarm</code>, etc.)</li>
+            <li><strong>Traduit ces événements</strong> en messages MQTT pour communiquer avec le servient</li>
+            <li><strong>Répond au client</strong> pour confirmer la réception et le traitement de sa demande</li>
+            <li><strong>Notifie tous les clients</strong> des changements d'état importants via <code>io.emit()</code></li>
+        </ol>
+        
+        <div class="highlight">
+            <p><strong>Point technique :</strong> Notez la différence entre <code>socket.emit()</code> et <code>io.emit()</code> :</p>
+            <ul>
+                <li><code>socket.emit()</code> envoie un message uniquement au client qui a émis l'événement (communication privée)</li>
+                <li><code>io.emit()</code> envoie un message à tous les clients connectés (diffusion générale)</li>
+            </ul>
+            <p>Cette distinction permet de gérer efficacement à la fois les réponses individuelles et les notifications globales.</p>
+        </div>
+        
+        <h2>9. Fonctionnement du Code JavaScript Côté Client</h2>
+        
+        <p>
+            Cette section explique en détail le fonctionnement du code JavaScript côté client, qui gère l'interface utilisateur et la communication avec le serveur via Socket.IO.
+        </p>
+        
+        <h3>9.1 Initialisation et Connexion</h3>
+        
+        <p>
+            Le code client commence par établir une connexion Socket.IO avec le serveur et initialiser les références aux éléments DOM importants :
+        </p>
+        
+        <pre>
+// Établissement de la connexion Socket.IO
+const socket = io();
+let currentMode = "simple";
+
+// Éléments DOM
+const sensorValueEl = document.getElementById("sensorValue");
+const ledStateEl = document.getElementById("ledState");
+const boardStatusEl = document.getElementById("boardStatus");
+const alarmStatusEl = document.getElementById("alarmStatus");
+const alarmMessageEl = document.getElementById("alarmMessage");
+const currentModeEl = document.getElementById("currentMode");
+const doorStateEl = document.getElementById("doorState");
+const personDetectedEl = document.getElementById("personDetected");
+const personDetectedContainerEl = document.getElementById("personDetectedContainer");
+const openDoorBtn = document.getElementById("openDoorBtn");
+const closeDoorBtn = document.getElementById("closeDoorBtn");
+const codeEntryDisplayEl = document.getElementById("codeEntryDisplay");
+const currentCodeSequenceEl = document.getElementById("currentCodeSequence");</pre>
+        
+        <h3>9.2 Écouteurs d'Événements Socket.IO</h3>
+        
+        <p>
+            Le client configure plusieurs écouteurs d'événements Socket.IO pour recevoir les mises à jour du serveur et mettre à jour l'interface utilisateur en conséquence :
+        </p>
+        
+        <h4>9.2.1 État de la Carte Arduino</h4>
+        
+        <pre>
+// Écoute des mises à jour de l'état de la carte
+socket.on("boardStatus", function(data) {
+  if (data.connected) {
+    boardStatusEl.textContent = "La carte Arduino est connectée";
+    boardStatusEl.className = "status connected";
+  } else {
+    boardStatusEl.textContent = "La carte Arduino n'est pas connectée";
+    boardStatusEl.className = "status disconnected";
+  }
+});</pre>
+        
+        <h4>9.2.2 Données des Capteurs</h4>
+        
+        <pre>
+// Écoute des mises à jour des données des capteurs
+socket.on("sensorData", function(data) {
+  sensorValueEl.textContent = data.value;
+  ledStateEl.textContent = data.ledState;
+});</pre>
+        
+        <h4>9.2.3 État de l'Alarme</h4>
+        
+        <pre>
+// Écoute des mises à jour de l'état de l'alarme
+socket.on("alarmStatus", function(data) {
+  alarmStatusEl.textContent = data.status;
+  alarmMessageEl.textContent = data.message;
+  
+  if (data.alarmActive) {
+    alarmStatusEl.className = "status alarm";
+    
+    // Vérification si c'est un message de détection de présence
+    if (data.message === 'Présence détectée!') {
+      // Création ou mise à jour d'une notification de détection de présence
+      showNotification('warning', 'PRÉSENCE DÉTECTÉE ! Entrez le code de sécurité.', true);
+      
+      // Rendre le message d'alarme plus visible
+      alarmMessageEl.style.fontWeight = 'bold';
+      alarmMessageEl.style.fontSize = '1.2em';
+      alarmMessageEl.style.color = '#ffc107';
+      alarmMessageEl.style.animation = 'blink 1s infinite';
+    }
+  } else {
+    alarmStatusEl.className = "status";
+    // Réinitialisation du style du message d'alarme
+    alarmMessageEl.style.fontWeight = 'normal';
+    alarmMessageEl.style.fontSize = '1em';
+    alarmMessageEl.style.color = '';
+    alarmMessageEl.style.animation = '';
+  }
+  
+  // Mise à jour de l'état de la porte
+  if (data.doorState) {
+    doorStateEl.textContent = data.doorState === 'open' ? 'ouverte' : 'fermée';
+  }
+  
+  // Mise à jour de la personne détectée
+  if (data.detectedPerson) {
+    personDetectedEl.textContent = data.detectedPerson;
+    personDetectedContainerEl.style.display = 'block';
+  } else {
+    personDetectedContainerEl.style.display = 'none';
+  }
+  
+  // Mise à jour de l'alerte d'intrusion
+  if (data.isIntruder) {
+    document.getElementById('intruder-alert').style.display = 'block';
+  } else {
+    document.getElementById('intruder-alert').style.display = 'none';
+  }
+});</pre>
+        
+        <h4>9.2.4 Événements de Détection</h4>
+        
+        <pre>
+// Écoute des événements de détection
+socket.on("detection", function(data) {
+  console.log("Événement de détection:", data);
+  
+  // Affichage de la notification de détection avec les informations de code
+  const message = data.message;
+  const codeInfo = data.codeInfo || '';
+  
+  const notification = `
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+      <strong>${message}</strong>
+      ${codeInfo ? `<p>${codeInfo}</p>` : ''}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  `;
+  
+  document.getElementById('notificationArea').innerHTML += notification;
+  
+  // Réinitialisation et affichage de l'écran de saisie de code
+  currentCodeSequenceEl.textContent = '_';
+  codeEntryDisplayEl.style.display = 'block';
+});</pre>
+        
+        <h3>9.3 Envoi de Commandes au Serveur</h3>
+        
+        <p>
+            Le client envoie des commandes au serveur via Socket.IO en réponse aux actions de l'utilisateur :
+        </p>
+        
+        <h4>9.3.1 Changement de Mode</h4>
+        
+        <pre>
+// Ajout d'un écouteur d'événement pour le changement de mode
+document.getElementById("ledMode").addEventListener("change", function() {
+  const mode = this.value;
+  
+  // Envoi de la commande de mise à jour du mode au serveur
+  socket.emit("updateMode", { mode });
+});</pre>
+        
+        <h4>9.3.2 Contrôle de la Porte</h4>
+        
+        <pre>
+// Fonction pour contrôler la porte
+function controlDoor(action) {
+  // Envoi de la commande de contrôle de la porte au serveur
+  socket.emit("doorControl", { action });
+}
+
+// Ajout d'écouteurs d'événements pour les boutons de porte
+openDoorBtn.addEventListener("click", function() {
+  controlDoor("open");
+});
+
+closeDoorBtn.addEventListener("click", function() {
+  controlDoor("close");
+});</pre>
+        
+        <h4>9.3.3 Arrêt de l'Alarme</h4>
+        
+        <pre>
+// Fonction pour arrêter l'alarme
+function stopAlarm() {
+  // Envoi de la commande d'arrêt d'alarme au serveur
+  socket.emit("stopAlarm");
+}
+
+// Ajout d'un écouteur d'événement pour le bouton d'arrêt d'alarme
+document.getElementById("stopAlarmBtn").addEventListener("click", stopAlarm);</pre>
+        
+        <h3>9.4 Gestion des Notifications</h3>
+        
+        <p>
+            Le client implémente un système de notifications pour informer l'utilisateur des événements importants :
+        </p>
+        
+        <pre>
+// Fonction pour afficher une notification
+function showNotification(type, message, sticky = false) {
+  const notificationArea = document.getElementById('notificationArea');
+  
+  // Création de l'élément de notification
+  const notification = document.createElement('div');
+  notification.className = `notification ${type}`;
+  notification.innerHTML = `
+    ${message}
+  `;
+  
+  // Ajout à la zone de notification
+  notificationArea.appendChild(notification);
+  
+  // Suppression automatique après 5 secondes ou 2 secondes pour la détection de présence
+  if (!sticky) {
+    setTimeout(() => {
+      notification.classList.remove('show');
+      setTimeout(() => {
+        notification.remove();
+      }, 500);
+    }, 5000);
+  } else {
+    // Pour les notifications de présence détectée (sticky=true), on les supprime après 2 secondes
+    setTimeout(() => {
+      notification.classList.remove('show');
+      setTimeout(() => {
+        notification.remove();
+      }, 500);
+    }, 2000);
+  }
+  
+  // Affichage de la notification
+  notification.classList.add('show');
+}</pre>
+        
+        <h3>9.5 Gestion des Alertes d'Intrusion</h3>
+        
+        <p>
+            Le client gère spécifiquement les alertes d'intrusion avec des fonctions dédiées :
+        </p>
+        
+        <pre>
+// Fonction pour afficher l'alerte d'intrusion
+function showIntruderAlert(message) {
+  const alertDiv = document.getElementById('intruder-alert');
+  const alertMessageEl = document.getElementById('intruder-message');
+  
+  alertMessageEl.textContent = message;
+  alertDiv.style.display = 'block';
+  
+  // Jouer le son d'alarme
+  const alarmSound = document.getElementById('alarmSound');
+  alarmSound.play();
+}
+
+// Fonction pour masquer l'alerte d'intrusion
+function hideIntruderAlert() {
+  const alertDiv = document.getElementById('intruder-alert');
+  alertDiv.style.display = 'none';
+  
+  // Arrêter le son d'alarme
+  const alarmSound = document.getElementById('alarmSound');
+  alarmSound.pause();
+  alarmSound.currentTime = 0;
+}</pre>
+        
+        <div class="highlight">
+            <p><strong>Décision métier :</strong> L'interface utilisateur a été conçue pour être réactive et informative, avec un système de notifications qui permet à l'utilisateur de rester informé des événements importants sans interrompre son flux de travail. Les notifications sont différenciées par type (information, avertissement, danger) et par durée (temporaires ou persistantes), ce qui permet une expérience utilisateur optimale.</p>
+        </div>
+        
+        <h2>10. Échanges de Messages sur le Broker MQTT</h2>
+        
+        <p>
+            Cette section détaille les différents échanges de messages qui se produisent sur le broker MQTT entre le serveur et le servient.
+        </p>
+        
+        <h3>10.1 Topics MQTT Utilisés</h3>
+        
+        <p>
+            Le système utilise plusieurs topics MQTT pour organiser la communication :
+        </p>
+        
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Topic</th>
+                    <th>Direction</th>
+                    <th>Description</th>
+                    <th>Format du Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><code>servient/state</code></td>
+                    <td>Servient → Serveur</td>
+                    <td>État global du servient</td>
+                    <td>
+                        <pre>
+{
+  "doorState": "open" | "closed",
+  "alarmState": "inactive" | "detection" | "active",
+  "detectedPerson": null | "nom",
+  "operationMode": "simple" | "alarm",
+  "timestamp": "2025-02-28T11:22:26Z"
+}</pre>
+                    </td>
+                </tr>
+                <tr>
+                    <td><code>servient/events</code></td>
+                    <td>Servient → Serveur</td>
+                    <td>Événements émis par le servient</td>
+                    <td>
+                        <pre>
+{
+  "event": "boardStatus" | "sensorData" | "detection" | "buttonPress" | "intruderAlert" | "error",
+  "data": { /* Données spécifiques à l'événement */ },
+  "timestamp": "2025-02-28T11:22:26Z"
+}</pre>
+                    </td>
+                </tr>
+                <tr>
+                    <td><code>servient/commands/mode</code></td>
+                    <td>Serveur → Servient</td>
+                    <td>Commandes de changement de mode</td>
+                    <td>
+                        <pre>
+{
+  "mode": "simple" | "alarm"
+}</pre>
+                    </td>
+                </tr>
+                <tr>
+                    <td><code>servient/commands/door</code></td>
+                    <td>Serveur → Servient</td>
+                    <td>Commandes de contrôle de la porte</td>
+                    <td>
+                        <pre>
+{
+  "action": "open" | "close"
+}</pre>
+                    </td>
+                </tr>
+                <tr>
+                    <td><code>servient/commands/alarm</code></td>
+                    <td>Serveur → Servient</td>
+                    <td>Commandes de contrôle de l'alarme</td>
+                    <td>
+                        <pre>
+{
+  "action": "stop"
+}</pre>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        
+        <h3>10.2 Flux de Communication Typiques</h3>
+        
+        <p>
+            Voici quelques exemples de flux de communication typiques entre le serveur et le servient :
+        </p>
+        
+        <h4>10.2.1 Détection de Présence et Saisie du Code</h4>
+        
+        <pre>
+# 1. Le servient détecte une présence
+Servient → Broker (servient/events):
+{
+  "event": "detection",
+  "data": {
+    "message": "Présence détectée!",
+    "codeInfo": "Entrez le code de sécurité dans 30 secondes"
+  },
+  "timestamp": "2025-02-28T11:22:26Z"
+}
+
+# 2. L'utilisateur commence à saisir le code
+Servient → Broker (servient/events):
+{
+  "event": "buttonPress",
+  "data": {
+    "button": 1,
+    "currentSequence": "1"
+  },
+  "timestamp": "2025-02-28T11:22:28Z"
+}
+
+# 3. L'utilisateur continue la saisie
+Servient → Broker (servient/events):
+{
+  "event": "buttonPress",
+  "data": {
+    "button": 2,
+    "currentSequence": "12"
+  },
+  "timestamp": "2025-02-28T11:22:30Z"
+}
+
+# 4. Code correct - Personne identifiée
+Servient → Broker (servient/events):
+{
+  "event": "codeVerification",
+  "data": {
+    "success": true,
+    "person": "John",
+    "message": "Code correct! Bienvenue John."
+  },
+  "timestamp": "2025-02-28T11:22:34Z"
+}
+
+# 5. Mise à jour de l'état global
+Servient → Broker (servient/state):
+{
+  "doorState": "open",
+  "alarmState": "inactive",
+  "detectedPerson": "John",
+  "operationMode": "alarm",
+  "timestamp": "2025-02-28T11:22:35Z"
+}</pre>
+        
+        <h4>10.2.2 Changement de Mode</h4>
+        
+        <pre>
+# 1. L'utilisateur demande un changement de mode via l'interface web
+Serveur → Broker (servient/commands/mode):
+{
+  "mode": "alarm"
+}
+
+# 2. Le servient confirme le changement de mode
+Servient → Broker (servient/events):
+{
+  "event": "modeChange",
+  "data": {
+    "mode": "alarm",
+    "previousMode": "simple"
+  },
+  "timestamp": "2025-02-28T11:22:40Z"
+}
+
+# 3. Mise à jour de l'état global
+Servient → Broker (servient/state):
+{
+  "doorState": "closed",
+  "alarmState": "inactive",
+  "detectedPerson": null,
+  "operationMode": "alarm",
+  "timestamp": "2025-02-28T11:22:41Z"
+}</pre>
+        
+        <h3>10.3 Visualisation des Messages MQTT</h3>
+        
+        <p>
+            Pour visualiser en temps réel les messages échangés sur le broker MQTT, vous pouvez :
+        </p>
+        
+        <ol>
+            <li>Consulter les logs du serveur et du servient, qui affichent les messages reçus et envoyés</li>
+            <li>Utiliser un client MQTT comme <a href="https://mqtt-explorer.com/" target="_blank">MQTT Explorer</a> pour vous connecter au broker et observer les échanges</li>
+            <li>Accéder à la page de monitoring MQTT incluse dans ce projet à l'adresse <a href="/mqtt-monitor.html">/mqtt-monitor.html</a></li>
+        </ol>
+        
+        <div class="highlight">
+            <p><strong>Note technique :</strong> Le broker MQTT utilisé dans ce projet est basé sur <a href="https://github.com/moscajs/aedes" target="_blank">Aedes</a>, un broker MQTT léger et performant implémenté en JavaScript. Il s'exécute sur le port 1883 et peut être utilisé par n'importe quel client MQTT compatible.</p>
+        </div>
+        
+        <h2>11. Implémentation du Système de Codes de Sécurité</h2>
+        
+        <p>
+            Cette section détaille l'implémentation du système de codes de sécurité utilisé pour identifier les personnes et contrôler l'accès au système.
+        </p>
+        
+        <h3>11.1 Principe de Fonctionnement</h3>
+        
+        <p>
+            Le système de codes de sécurité repose sur un mécanisme simple mais efficace :
+        </p>
+        
+        <ol>
+            <li>Chaque personne autorisée possède un code unique à 4 chiffres</li>
+            <li>Les codes sont composés uniquement des chiffres 1 et 2, correspondant aux deux boutons physiques disponibles</li>
+            <li>Lorsqu'une présence est détectée, le système attend la saisie d'un code valide</li>
+            <li>Si le code est correct, la personne est identifiée et la porte s'ouvre</li>
+            <li>Si aucun code n'est saisi ou si le code est incorrect, le système déclenche une alarme</li>
+        </ol>
+        
+        <h3>11.2 Définition des Codes</h3>
+        
+        <p>
+            Les codes de sécurité sont définis dans le fichier <code>servient.js</code> sous forme d'un objet JavaScript :
+        </p>
+        
+        <pre>
+// Codes de sécurité pour différentes personnes
+const PERSON_CODES = {
+  '1212': 'John',
+  '2121': 'Alice',
+  '1122': 'Bob',
+  '2211': 'Emma'
+};</pre>
+        
+        <p>
+            Chaque entrée associe un code à 4 chiffres (clé) à un nom de personne (valeur). Cette structure permet une vérification rapide et efficace des codes saisis.
+        </p>
+        
+        <div class="highlight">
+            <p><strong>Note de sécurité :</strong> Dans un environnement de production réel, ces codes devraient être stockés de manière sécurisée, idéalement sous forme de hachage avec sel, et non en clair dans le code source. Cette implémentation simplifiée est utilisée à des fins éducatives uniquement.</p>
+        </div>
+        
+        <h3>11.3 Saisie et Traitement des Codes</h3>
+        
+        <p>
+            La saisie des codes s'effectue via deux boutons physiques connectés à l'Arduino :
+        </p>
+        
+        <pre>
+// Configuration des boutons pour la saisie de code
+buttonPin2 = new Button({
+  pin: 2
+});
+buttonPin1 = new Button({
+  pin: 3
+});</pre>
+        
+        <p>
+            Chaque pression sur un bouton est capturée par un gestionnaire d'événements qui :
+        </p>
+        
+        <ol>
+            <li>Ajoute le chiffre correspondant à la séquence en cours</li>
+            <li>Publie un événement MQTT pour informer l'interface utilisateur</li>
+            <li>Vérifie si un code complet a été saisi</li>
+        </ol>
+        
+        <pre>
+buttonPin1.on("press", () => {
+  console.log("Button 1 pressed");
+  
+  // Ajout de la pression du bouton 1 à la séquence
+  buttonPressSequence.push(1);
+  console.log(`Code sequence: ${buttonPressSequence.join('')}`);
+  
+  // Publication de l'événement de pression avec la séquence actuelle
+  publishEvent('buttonPress', { 
+    button: 1, 
+    currentSequence: buttonPressSequence.join('') 
+  });
+  
+  // Vérification si le code est complet
+  checkSecurityCode();
+});</pre>
+        
+        <h3>11.4 Vérification des Codes</h3>
+        
+        <p>
+            La vérification des codes est effectuée par la fonction <code>checkSecurityCode()</code> qui :
+        </p>
+        
+        <pre>
+// Fonction de vérification du code de sécurité
+function checkSecurityCode() {
+  const codeString = buttonPressSequence.join('');
+  
+  console.log(`Current code sequence: ${codeString}`);
+  
+  // Traitement uniquement des codes à 4 chiffres
+  if (codeString.length === 4) {
+    console.log(`Checking 4-digit code: ${codeString}`);
+    
+    // Vérification si le code correspond à une personne
+    const person = PERSON_CODES[codeString];
+    
+    if (person) {
+      console.log(`Valid code entered by ${person}`);
+      
+      // Si en mode alarme et l'alarme est active ou en détection, arrêter l'alarme
+      if (operationMode === 'alarm' && (alarmState === 'active' || alarmState === 'detection')) {
+        stopAlarm();
+      }
+      
+      // Ouverture de la porte pour la personne
+      openDoor();
+      
+      // Définition de la personne détectée
+      detectedPerson = person;
+      
+      // Publication de l'événement avec le nom de la personne
+      publishEvent('codeEntry', { 
+        success: true, 
+        person: person,
+        message: `Bienvenue, ${person} !`,
+        code: codeString
+      });
+      
+      // Publication également d'un événement de personne détectée
+      publishEvent('personDetected', {
+        name: person,
+        message: `Bienvenue, ${person} !`
+      });
+      
+      // Réinitialisation de la séquence de boutons après traitement
+      buttonPressSequence = [];
+      
+      // Publication d'une séquence de boutons vide pour effacer l'affichage
+      publishEvent('buttonPress', { 
+        button: 0, 
+        currentSequence: '' 
+      });
+    } else {
+      console.log(`Invalid code entered: ${codeString}`);
+      
+      // Publication de l'événement pour un code invalide
+      publishEvent('codeEntry', { 
+        success: false, 
+        message: "Code de sécurité invalide !",
+        code: codeString
+      });
+      
+      // Réinitialisation de la séquence de boutons après traitement
+      buttonPressSequence = [];
+      
+      // Publication d'une séquence de boutons vide pour effacer l'affichage
+      publishEvent('buttonPress', { 
+        button: 0, 
+        currentSequence: '' 
+      });
+    }
+  }
+}</pre>
+        
+        <h3>11.5 Séquence de Détection et Temporisation</h3>
+        
+        <p>
+            Lorsqu'une présence est détectée en mode alarme, le système suit une séquence temporisée :
+        </p>
+        
+        <ol>
+            <li><strong>Phase 1 (0-30 secondes) :</strong> Détection initiale, LED allumée en continu</li>
+            <li><strong>Phase 2 (30-50 secondes) :</strong> Si aucun code valide n'a été saisi, la LED commence à clignoter</li>
+            <li><strong>Phase 3 (après 50 secondes) :</strong> Si aucun code valide n'a été saisi, l'alarme complète est déclenchée</li>
+        </ol>
+        
+        <pre>
+// Fonction pour démarrer le compte à rebours de détection
+function startDetectionCountdown() {
+  // Définir l'état d'alarme sur 'détection'
+  alarmState = 'detection';
+  
+  // Allumer la LED pour indiquer la détection
+  if (led) led.on();
+  
+  // Effacer les intervalles et timeouts existants
+  if (alarmCountdown) {
+    clearTimeout(alarmCountdown);
+    alarmCountdown = null;
+  }
+  
+  if (alarmBlinkInterval) {
+    clearInterval(alarmBlinkInterval);
+    alarmBlinkInterval = null;
+  }
+  
+  if (detectionBlinkInterval) {
+    clearInterval(detectionBlinkInterval);
+    detectionBlinkInterval = null;
+  }
+  
+  // Publication du changement d'état
+  publishState();
+  publishEvent('detection', { 
+    message: 'Présence détectée ! Entrez un code à 4 chiffres à tout moment en utilisant le Bouton 1 (pour le chiffre 1) et le Bouton 2 (pour le chiffre 2)',
+    codeInfo: 'Utilisez le Bouton 1 pour le chiffre 1 et le Bouton 2 pour le chiffre 2. Entrez un code à 4 chiffres.'
+  });
+  
+  // Première phase : 30 secondes avec la lumière allumée
+  alarmCountdown = setTimeout(() => {
+    // Si le code n'a pas été saisi correctement dans les 30 secondes, commencer à clignoter et notifier l'intrus
+    if (alarmState === 'detection') {
+      console.log("Aucun code saisi dans les 30 secondes, démarrage de la phase de clignotement...");
+      
+      // Démarrer le clignotement de la LED après 30 secondes
+      detectionBlinkInterval = setInterval(() => {
+        if (led) led.toggle();
+      }, 300);
+      
+      // Envoyer une notification d'intrus
+      publishEvent('intruderAlert', { message: 'Intrus détecté ! Aucun code valide n\'a été entré.' });
+      
+      // Définir un autre compte à rebours de 20 secondes avant l'alarme complète
+      setTimeout(() => {
+        if (alarmState === 'detection') {
+          console.log("Aucun code entré dans les 50 secondes au total, activation de l'alarme complète...");
+          
+          // Effacer l'intervalle de clignotement avant de démarrer l'alarme
+          if (detectionBlinkInterval) {
+            clearInterval(detectionBlinkInterval);
+            detectionBlinkInterval = null;
+          }
+          
+          // Activer l'alarme complète
+          startAlarm();
+        }
+      }, 20000);
+    }
+  }, 30000);
+}</pre>
+        
+        <h3>11.6 Interface Utilisateur</h3>
+        
+        <p>
+            L'interface utilisateur affiche la séquence de code en cours de saisie et informe l'utilisateur du résultat de la vérification :
+        </p>
+        
+        <ul>
+            <li>Affichage de la séquence de chiffres en temps réel lors de la saisie</li>
+            <li>Message de bienvenue personnalisé en cas de code valide</li>
+            <li>Message d'erreur en cas de code invalide</li>
+            <li>Affichage du nom de la personne identifiée</li>
+        </ul>
+        
+        <div class="highlight">
+            <p><strong>Décision de conception :</strong> Le système utilise délibérément un mécanisme de saisie simple avec seulement deux boutons pour faciliter l'implémentation matérielle. Dans un système réel, on pourrait envisager un clavier numérique complet ou d'autres méthodes d'authentification comme les cartes RFID, la reconnaissance faciale ou la biométrie.</p>
+        </div>
+        
+        <h3>11.7 Diagramme de Séquence</h3>
+        
+        <p>
+            Le diagramme ci-dessous illustre la séquence complète de détection et de vérification de code :
+        </p>
+        
+        <pre>
+┌─────────┐          ┌──────────┐          ┌────────┐          ┌──────────┐
+│ Capteur │          │ Servient │          │ Broker │          │ Interface │
+└────┬────┘          └────┬─────┘          └────┬───┘          └─────┬────┘
+     │    Détection       │                     │                    │
+     │─────────────────>  │                     │                    │
+     │                    │                     │                    │
+     │                    │  Événement detection│                    │
+     │                    │────────────────────>│                    │
+     │                    │                     │                    │
+     │  ┌─────────────────┴─────────────────┐  │                    │
+     │  │ Démarrage du compte à rebours     │  │                    │
+     │  │ de détection (30s)                │  │                    │
+     │  └─────────────────┬─────────────────┘  │                    │
+     │                    │                     │                    │
+     │                    │ ◄─ Pression Bouton 1│                    │
+     │                    │                     │                    │
+     │                    │  Événement buttonPress                   │
+     │                    │────────────────────>│                    │
+     │                    │                     │  Mise à jour UI    │
+     │                    │                     │───────────────────>│
+     │                    │                     │                    │
+     │                    │ ◄─ Pression Bouton 2│                    │
+     │                    │                     │                    │
+     │                    │  Événement buttonPress                   │
+     │                    │────────────────────>│                    │
+     │                    │                     │  Mise à jour UI    │
+     │                    │                     │───────────────────>│
+     │                    │                     │                    │
+     │  ┌─────────────────┴─────────────────┐  │                    │
+     │  │ Vérification du code              │  │                    │
+     │  └─────────────────┬─────────────────┘  │                    │
+     │                    │                     │                    │
+     │                    │  Événement codeEntry (succès)            │
+     │                    │────────────────────>│                    │
+     │                    │                     │  Message bienvenue │
+     │                    │                     │───────────────────>│
+     │                    │                     │                    │
+     │                    │  Événement doorControl (ouverture)       │
+     │                    │────────────────────>│                    │
+     │                    │                     │  Mise à jour UI    │
+     │                    │                     │───────────────────>│
+     │                    │                     │                    │
+└────┴────┘          └────┴─────┘          └────┴───┘          └─────┴────┘</pre>
+        
+        <h2>12. Architecture du Système</h2>
+        
+        <p>
+            Cette section détaille l'architecture globale du système, en se concentrant sur les deux composants principaux : le serveur et le servient.
+        </p>
+        
+        <h3>12.1 Le Serveur (server.js)</h3>
+        
+        <p>
+            Le serveur est le composant central du système qui gère l'interface utilisateur web, la communication avec le servient via MQTT, et coordonne les différentes fonctionnalités.
+        </p>
+        
+        <h4>12.1.1 Fonctionnalités Principales</h4>
+        
+        <ul>
+            <li>Serveur HTTP pour servir les fichiers statiques de l'interface utilisateur</li>
+            <li>Communication en temps réel avec les clients web via Socket.IO</li>
+            <li>Client MQTT pour communiquer avec le servient</li>
+            <li>Gestion de l'état global du système</li>
+            <li>Traitement des événements et commandes</li>
+        </ul>
+        
+        <h4>12.1.2 Structure du Code</h4>
+        
+        <pre>
+// Importation des modules nécessaires
+const http = require("http");
+const socketIo = require("socket.io");
+const mqtt = require('mqtt');
+
+// Initialisation du serveur HTTP et Socket.IO
+const server = http.createServer((req, res) => {
+  // Serveur de fichiers statiques pour le répertoire public
+  // ...
+});
+
+const io = socketIo(server);
+
+// Configuration du client MQTT
+const MQTT_BROKER = 'mqtt://localhost:1883';
+const mqttClient = mqtt.connect(MQTT_BROKER);
+
+// Variables globales pour la gestion de l'état
+global.sensorData = { value: 'N/A', ledState: 'N/A' };
+global.alarmActive = false;
+global.alarmMessage = 'Inactif';
+global.systemStatus = 'Système en mode normal';
+global.operationMode = 'simple'; // Mode par défaut
+global.doorState = 'closed';
+global.detectedPerson = null;
+global.boardConnected = false;</pre>
+        
+        <h4>12.1.3 Gestion des Messages MQTT</h4>
+        
+        <p>
+            Le serveur s'abonne aux topics MQTT pour recevoir les événements et les mises à jour d'état du servient :
+        </p>
+        
+        <pre>
+// Gestionnaire de connexion MQTT
+mqttClient.on('connect', () => {
+  console.log('Connected to MQTT broker');
+  
+  // Abonnement aux topics
+  mqttClient.subscribe('servient/events');
+  mqttClient.subscribe('servient/state');
+});
+
+// Gestionnaire de messages MQTT
+mqttClient.on('message', (topic, message) => {
+  try {
+    const messageObj = JSON.parse(message.toString());
+    console.log(`Received message on topic ${topic}:`, messageObj);
+    
+    // Émettre l'événement pour le moniteur MQTT
+    io.emit('mqtt:message', {
+      topic: topic,
+      payload: message.toString(),
+      timestamp: new Date().toISOString(),
+      direction: 'incoming'
+    });
+    
+    // Traiter les différents types d'événements
+    if (topic === 'servient/events') {
+      const { event, data } = messageObj;
+      // Traitement spécifique selon le type d'événement
+      // ...
+    } else if (topic === 'servient/state') {
+      // Mise à jour de l'état global
+      // ...
+    }
+  } catch (error) {
+    console.error('Error processing MQTT message:', error);
+  }
+});</pre>
+        
+        <h4>12.1.4 Communication avec l'Interface Utilisateur</h4>
+        
+        <p>
+            Le serveur utilise Socket.IO pour communiquer en temps réel avec l'interface utilisateur web :
+        </p>
+        
+        <pre>
+// Gestionnaire de connexion Socket.IO
+io.on("connection", (socket) => {
+  console.log("New client connected");
+  
+  // Envoyer l'état initial au client
+  socket.emit("initialState", {
+    sensorData: global.sensorData,
+    alarmActive: global.alarmActive,
+    alarmMessage: global.alarmMessage,
+    systemStatus: global.systemStatus,
+    operationMode: global.operationMode,
+    doorState: global.doorState,
+    detectedPerson: global.detectedPerson,
+    boardConnected: global.boardConnected
+  });
+  
+  // Gestionnaires d'événements pour les actions utilisateur
+  socket.on("updateMode", (data) => {
+    // Traitement du changement de mode
+    // ...
+  });
+  
+  socket.on("doorControl", (data) => {
+    // Traitement des commandes de porte
+    // ...
+  });
+  
+  socket.on("stopAlarm", () => {
+    // Traitement de l'arrêt d'alarme
+    // ...
+  });
+  
+  // Gestionnaire de déconnexion
+  socket.on("disconnect", () => {
+    console.log("Client disconnected");
+  });
+});</pre>
+        
+        <h4>12.1.5 Publication de Messages MQTT</h4>
+        
+        <p>
+            Le serveur utilise une fonction dédiée pour publier des messages MQTT et les transmettre au moniteur :
+        </p>
+        
+        <pre>
+// Fonction pour publier un message MQTT et le transmettre au moniteur
+function publishMQTT(topic, message) {
+  const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
+  
+  // Publier le message MQTT
+  mqttClient.publish(topic, messageStr);
+  
+  // Émettre l'événement pour le moniteur MQTT
+  io.emit('mqtt:message', {
+    topic: topic,
+    payload: messageStr,
+    timestamp: new Date().toISOString(),
+    direction: 'outgoing'
+  });
+}</pre>
+        
+        <h3>12.2 Le Servient (servient.js)</h3>
+        
+        <p>
+            Le servient est le composant qui s'exécute sur l'Arduino et gère les capteurs, les actionneurs et la logique de contrôle d'accès. Il communique avec le serveur via MQTT.
+        </p>
+        
+        <h4>12.2.1 Fonctionnalités Principales</h4>
+        
+        <ul>
+            <li>Contrôle des composants matériels (LED, servo, capteurs, boutons)</li>
+            <li>Gestion du système d'alarme et de détection</li>
+            <li>Vérification des codes de sécurité</li>
+            <li>Communication avec le serveur via MQTT</li>
+        </ul>
+        
+        <h4>12.2.2 Structure du Code</h4>
+        
+        <pre>
+const { Board, Led, Button, Sensor, Servo } = require("johnny-five");
+const mqtt = require('mqtt');
+
+// Variables globales
+let operationMode = 'simple'; // 'simple' ou 'alarm'
+let alarmState = 'inactive'; // 'inactive', 'detection', ou 'active'
+let doorState = 'closed'; // 'open' ou 'closed'
+let detectedPerson = null; // Nom de la personne détectée
+
+// Variables pour les fonctionnalités d'alarme
+let buttonPressSequence = []; // Stockage de la séquence de pressions de boutons
+let alarmCountdown = null; // Timeout pour le compte à rebours d'alarme
+let alarmBlinkInterval = null; // Intervalle pour le clignotement d'alarme
+let detectionBlinkInterval = null; // Intervalle pour le clignotement en phase de détection
+let doorCloseTimeout = null; // Timeout pour la fermeture automatique de la porte
+
+// Variables pour les composants matériels
+let led = null;
+let doorServo = null;
+let buttonPin1 = null;
+let buttonPin2 = null;
+
+// Constantes
+const LIGHT_THRESHOLD = 300; // Seuil pour le capteur de lumière
+const DOOR_OPEN_ANGLE = 90; // Angle pour la porte ouverte
+const DOOR_CLOSED_ANGLE = 0; // Angle pour la porte fermée
+
+// Codes de sécurité pour différentes personnes
+const PERSON_CODES = {
+  '1212': 'John',
+  '2121': 'Alice',
+  '1122': 'Bob',
+  '2211': 'Emma'
+};</pre>
+        
+        <h4>12.2.3 Communication MQTT</h4>
+        
+        <p>
+            Le servient se connecte au broker MQTT et s'abonne aux topics de commandes :
+        </p>
+        
+        <pre>
+// Connexion au broker MQTT
+const client = mqtt.connect('mqtt://localhost:1883');
+
+client.on('connect', () => {
+  console.log('Connected to MQTT broker');
+  
+  // Abonnement aux topics de commandes
+  client.subscribe('servient/commands/mode');
+  client.subscribe('servient/commands/door');
+  client.subscribe('servient/commands/alarm');
+  
+  // Publication de l'état initial
+  publishState();
+  console.log('Initial state published');
+});
+
+// Gestionnaire de messages MQTT
+client.on('message', (topic, message) => {
+  try {
+    const messageObj = JSON.parse(message.toString());
+    console.log(`Received command on topic ${topic}:`, messageObj);
+    
+    // Traitement des différentes commandes
+    if (topic === 'servient/commands/mode') {
+      // Changement de mode
+      // ...
+    } else if (topic === 'servient/commands/door') {
+      // Contrôle de la porte
+      // ...
+    } else if (topic === 'servient/commands/alarm') {
+      // Contrôle de l'alarme
+      // ...
+    }
+  } catch (error) {
+    console.error('Error processing MQTT message:', error);
+  }
+});</pre>
+        
+        <h4>12.2.4 Publication d'Événements et d'État</h4>
+        
+        <p>
+            Le servient publie des événements et son état actuel via MQTT :
+        </p>
+        
+        <pre>
+// Fonction pour publier l'état actuel
+function publishState() {
+  client.publish('servient/state', JSON.stringify({
+    doorState: doorState,
+    alarmState: alarmState,
+    detectedPerson: detectedPerson,
+    operationMode: operationMode
+  }));
+}
+
+// Fonction pour publier un événement
+function publishEvent(eventType, data) {
+  client.publish('servient/events', JSON.stringify({
+    event: eventType,
+    data: data,
+    timestamp: new Date().toISOString()
+  }));
+}</pre>
+        
+        <h4>12.2.5 Gestion des Capteurs et Actionneurs</h4>
+        
+        <p>
+            Le servient utilise la bibliothèque Johnny-Five pour interagir avec les composants matériels :
+        </p>
+        
+        <pre>
+// Initialisation de la carte Arduino
+const board = new Board();
+
+board.on("ready", () => {
+  console.log("Board ready!");
+  
+  // Publier l'événement de connexion de la carte
+  publishEvent('boardStatus', { connected: true });
+  
+  // Configuration de la LED sur la broche 8 (pour l'indicateur d'alarme)
+  led = new Led(8);
+  led.off();
+  
+  // Configuration du servo de porte sur la broche 7
+  doorServo = new Servo({
+    pin: 7,
+    range: [0, 90],  // Définir la plage à 0-90 degrés
+    startAt: 0       // Commencer en position fermée (0 degrés)
+  });
+  
+  // Configuration des boutons pour la saisie de code
+  buttonPin2 = new Button({
+    pin: 2
+  });
+  buttonPin1 = new Button({
+    pin: 3
+  });
+  
+  // Configuration du capteur de lumière sur la broche analogique A3 avec une fréquence de lecture de 200ms
+  const sensor = new Sensor({
+    pin: "A3",
+    freq: 200
+  });
+  
+  // Gestionnaire de données du capteur
+  sensor.on("data", function() {
+    const sensorValue = this.value;
+    
+    // Traitement des données du capteur selon le mode de fonctionnement
+    // ...
+  });
+  
+  // Gestionnaires des boutons
+  buttonPin1.on("press", () => {
+    // Traitement de la pression du bouton 1
+    // ...
+  });
+  
+  buttonPin2.on("press", () => {
+    // Traitement de la pression du bouton 2
+    // ...
+  });
+});</pre>
+        
+        <h3>12.3 Diagramme d'Architecture</h3>
+        
+        <p>
+            Le diagramme ci-dessous illustre l'architecture globale du système et les interactions entre ses composants :
+        </p>
+        
+        <pre>
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│                        Interface Utilisateur Web                        │
+│                                                                         │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                │
+                                │ HTTP / WebSocket (Socket.IO)
+                                │
+┌───────────────────────────────▼─────────────────────────────────────────┐
+│                                                                         │
+│                          Serveur (server.js)                            │
+│                                                                         │
+│  ┌─────────────────┐     ┌──────────────────┐    ┌──────────────────┐   │
+│  │                 │     │                  │    │                  │   │
+│  │  Serveur HTTP   │     │  Socket.IO       │    │  Client MQTT     │   │
+│  │                 │     │                  │    │                  │   │
+│  └─────────────────┘     └──────────────────┘    └────────┬─────────┘   │
+│                                                           │             │
+└───────────────────────────────────────────────────────────┼─────────────┘
+                                                            │
+                                                            │ MQTT
+                                                            │
+┌───────────────────────────────────────────────────────────▼─────────────┐
+│                                                                         │
+│                         Broker MQTT (Aedes)                             │
+│                                                                         │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                │
+                                │ MQTT
+                                │
+┌───────────────────────────────▼─────────────────────────────────────────┐
+│                                                                         │
+│                        Servient (servient.js)                           │
+│                                                                         │
+│  ┌─────────────────┐     ┌──────────────────┐    ┌──────────────────┐   │
+│  │                 │     │                  │    │                  │   │
+│  │  Client MQTT    │     │  Johnny-Five     │    │  Logique         │   │
+│  │                 │     │                  │    │  d'Application   │   │
+│  └─────────────────┘     └──────────────────┘    └──────────────────┘   │
+│                                   │                                     │
+└───────────────────────────────────┼─────────────────────────────────────┘
+                                    │
+                                    │ Firmata
+                                    │
+┌───────────────────────────────────▼─────────────────────────────────────┐
+│                                                                         │
+│                           Arduino (Matériel)                            │
+│                                                                         │
+│  ┌─────────────────┐     ┌──────────────────┐    ┌──────────────────┐   │
+│  │                 │     │                  │    │                  │   │
+│  │  Capteurs       │     │  LED             │    │  Servo           │   │
+│  │  (Lumière)      │     │  (Alarme)        │    │  (Porte)         │   │
+│  └─────────────────┘     └──────────────────┘    └──────────────────┘   │
+│                                                                         │
+│  ┌─────────────────┐     ┌──────────────────┐                           │
+│  │                 │     │                  │                           │
+│  │  Bouton 1       │     │  Bouton 2        │                           │
+│  │  (Code)         │     │  (Code)          │                           │
+│  └─────────────────┘     └──────────────────┘                           │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘</pre>
+        
+        <div class="highlight">
+            <p><strong>Note d'architecture :</strong> Le système suit une architecture orientée événements où les composants communiquent via des messages MQTT. Cette approche permet un découplage entre les différents éléments du système et facilite l'extension avec de nouveaux composants.</p>
+        </div>
+    </div>
+</body>
+</html>

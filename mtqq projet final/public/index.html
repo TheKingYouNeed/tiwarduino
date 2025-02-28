@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr-FR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -143,6 +143,73 @@
       50% { background-color: #b71c1c; }
       100% { background-color: #ff3547; }
     }
+    .danger-button {
+      background-color: #dc3545;
+      color: white;
+      font-weight: bold;
+      margin-top: 10px;
+      border: none;
+    }
+    .danger-button:hover {
+      background-color: #c82333;
+    }
+    .warning-button {
+      background-color: #ffc107;
+      color: #212529;
+      font-weight: bold;
+      margin-top: 10px;
+      border: none;
+    }
+    .warning-button:hover {
+      background-color: #e0a800;
+    }
+    .presence-detected-alert {
+      background-color: #ffc107;
+      color: #212529;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+      font-weight: bold;
+      text-align: center;
+      font-size: 1.2em;
+      animation: blink 1s infinite;
+    }
+    .notification-area {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 300px;
+      z-index: 1000;
+    }
+    .notification {
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+      opacity: 0;
+      transform: translateX(100%);
+      transition: all 0.5s ease;
+    }
+    .notification.show {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    .notification.success {
+      background-color: #d4edda;
+      border-color: #c3e6cb;
+      color: #155724;
+    }
+    .notification.warning {
+      background-color: #fff3cd;
+      border-color: #ffeeba;
+      color: #856404;
+      animation: blink 1s infinite;
+    }
+    .notification.error {
+      background-color: #f8d7da;
+      border-color: #f5c6cb;
+      color: #721c24;
+    }
   </style>
 </head>
 <body>
@@ -155,18 +222,18 @@
     </div>
     
     <div class="card">
-      <h2>Capteur de luminosité</h2>
-      <div class="value-display" id="sensorValue">N/A</div>
+      <h2>Informations sur le Capteur</h2>
+      <p>Valeur du capteur: <span id="sensorValue">N/A</span></p>
       <p>État de la LED: <span id="ledState">N/A</span></p>
     </div>
     
     <div class="card">
-      <h2>Configuration</h2>
+      <h2>Contrôle du Mode</h2>
       <div class="form-group">
-        <label for="ledMode">Mode de fonctionnement:</label>
+        <label for="ledMode">Sélectionner le mode:</label>
         <select id="ledMode">
-          <option value="simple">Simple (LED asservie au capteur)</option>
-          <option value="alarm">Alarme (Détection de présence)</option>
+          <option value="simple">Mode Simple</option>
+          <option value="alarm">Mode Alarme</option>
         </select>
       </div>
       <p>Mode actuel: <span id="currentMode">Simple</span></p>
@@ -201,8 +268,7 @@
       <p id="alarmMessage">Inactif</p>
       
       <div class="form-group">
-        <h3>État de la porte</h3>
-        <p>La porte est actuellement: <span id="doorState">fermée</span></p>
+        <h3>Contrôle de la porte</h3>
         <div class="door-controls">
           <button id="openDoorBtn">Ouvrir la porte</button>
           <button id="closeDoorBtn">Fermer la porte</button>
@@ -213,71 +279,22 @@
         <h3>Personne détectée</h3>
         <p class="person-detected">Identité: <span id="personDetected">Inconnu</span></p>
       </div>
+      
+      <!-- Add intruder alert div -->
+      <div id="intruder-alert" class="intruder-alert" style="display: none;">
+        <p class="alert-message">INTRUSION DÉTECTÉE! Personne non autorisée!</p>
+        <button id="stopAlarmBtn" class="danger-button">Arrêter l'alarme</button>
+      </div>
+      
+      <!-- Add stop alarm button even when no intrusion -->
+      <div class="form-group mt-3">
+        <button id="stopAlarmNoIntrusionBtn" class="warning-button">Arrêter l'alarme (fausse alerte)</button>
+      </div>
     </div>
   </div>
   
-  <div class="container mt-4">
-    <h1>Security System Dashboard</h1>
-    
-    <!-- Connection status -->
-    <div class="card mb-3">
-      <div class="card-header">
-        <h5>Connection Status</h5>
-      </div>
-      <div class="card-body">
-        <div class="row">
-          <div class="col-md-6">
-            <p>Server: <span id="connectionStatus" class="badge bg-secondary">Connecting...</span></p>
-          </div>
-          <div class="col-md-6">
-            <p>Arduino Board: <span id="boardStatus" class="badge bg-secondary">Unknown</span></p>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Notification Area -->
-    <div id="notificationArea" class="mb-3"></div>
-    
-    <!-- Intruder Alert -->
-    <div id="intruder-alert" class="alert alert-danger" style="display: none;">
-      <h4 class="alert-heading">⚠️ INTRUDER ALERT! ⚠️</h4>
-      <p class="alert-message">Unauthorized access detected!</p>
-      <hr>
-      <p class="mb-0">Please check your security system immediately.</p>
-      <button type="button" class="btn btn-warning mt-2" onclick="hideIntruderAlert()">Dismiss Alert</button>
-    </div>
-    
-    <!-- Audio for alarm -->
-    <audio id="alarmSound" loop>
-      <source src="alarm.mp3" type="audio/mpeg">
-      Your browser does not support the audio element.
-    </audio>
-  </div>
+  <div class="notification-area" id="notificationArea"></div>
   
-  <div id="alarm-container" class="container mt-4" style="display: none;">
-    <div class="row">
-      <div class="col-md-12">
-        <div id="intruder-alert" class="intruder-alert" style="display: none;">
-          INTRUS DÉTECTÉ! Aucun code valide entré.
-        </div>
-        <div class="card">
-          <div class="card-header bg-danger text-white">
-            <h5 id="alarm-message">Alarme inactive</h5>
-          </div>
-          <div class="card-body">
-            <p id="system-status">Système en mode normal</p>
-            <div id="detected-person-info" style="display: none;">
-              <div class="alert alert-success mt-2">
-                <strong>Personne détectée:</strong> <span id="detected-person-name"></span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <script src="/socket.io/socket.io.js"></script>
   <script>
     // Connect to the server
@@ -302,10 +319,10 @@
     // Listen for board status updates
     socket.on("boardStatus", function(data) {
       if (data.connected) {
-        boardStatusEl.textContent = "Carte Arduino connectée";
+        boardStatusEl.textContent = "La carte Arduino est connectée";
         boardStatusEl.className = "status connected";
       } else {
-        boardStatusEl.textContent = "Carte Arduino non connectée";
+        boardStatusEl.textContent = "La carte Arduino n'est pas connectée";
         boardStatusEl.className = "status disconnected";
       }
     });
@@ -323,8 +340,25 @@
       
       if (data.alarmActive) {
         alarmStatusEl.className = "status alarm";
+        
+        // Check if this is a presence detection message
+        if (data.message === 'Présence détectée!') {
+          // Create or update a presence detection notification
+          showNotification('warning', 'PRÉSENCE DÉTECTÉE ! Entrez le code de sécurité.', true);
+          
+          // Make the alarm message more visible
+          alarmMessageEl.style.fontWeight = 'bold';
+          alarmMessageEl.style.fontSize = '1.2em';
+          alarmMessageEl.style.color = '#ffc107';
+          alarmMessageEl.style.animation = 'blink 1s infinite';
+        }
       } else {
         alarmStatusEl.className = "status";
+        // Reset alarm message styling
+        alarmMessageEl.style.fontWeight = 'normal';
+        alarmMessageEl.style.fontSize = '1em';
+        alarmMessageEl.style.color = '';
+        alarmMessageEl.style.animation = '';
       }
       
       // Update door state
@@ -370,21 +404,9 @@
       }
     });
     
-    // Listen for mode change events from server
-    socket.on("modeChange", function(data) {
-      console.log("Received mode change:", data);
-      const modeSelect = document.getElementById("ledMode");
-      document.getElementById("currentMode").innerText = data.mode === "simple" ? "Simple" : "Alarme";
-      
-      // Update the select dropdown to match the new mode
-      if (modeSelect.value !== data.mode) {
-        modeSelect.value = data.mode;
-      }
-    });
-    
     // Listen for door control events
     socket.on("doorControl", function(data) {
-      console.log("Door control:", data);
+      console.log("Contrôle de la porte:", data);
       
       // Update door state in UI
       const doorStateEl = document.getElementById("doorState");
@@ -407,7 +429,7 @@
     
     // Listen for door action events
     socket.on("doorAction", function(data) {
-      console.log("Door action:", data);
+      console.log("Action de la porte:", data);
       if (data.action === 'opened') {
         doorStateEl.textContent = 'ouverte';
       } else if (data.action === 'closed') {
@@ -417,7 +439,7 @@
     
     // Listen for code entry events
     socket.on("codeEntry", function(data) {
-      console.log("Code entry:", data);
+      console.log("Entrée de code:", data);
       
       if (data.success) {
         // Show success notification
@@ -439,7 +461,7 @@
     
     // Listen for button press events
     socket.on("buttonPress", function(data) {
-      console.log("Button press:", data);
+      console.log("Appui sur le bouton:", data);
       
       // If we have a current sequence, update the display
       if (data.currentSequence) {
@@ -450,7 +472,7 @@
     
     // Listen for detection events
     socket.on("detection", function(data) {
-      console.log("Detection event:", data);
+      console.log("Événement de détection:", data);
       
       // Show detection notification with code info
       const message = data.message;
@@ -473,7 +495,7 @@
     
     // Listen for intruder alert events
     socket.on("intruderAlert", function(data) {
-      console.log("Intruder alert:", data);
+      console.log("Alerte d'intrus:", data);
       showIntruderAlert(data.message);
       
       // Hide the code entry display
@@ -482,7 +504,7 @@
     
     // Listen for person detected events
     socket.on("personDetected", function(data) {
-      console.log("Person detected:", data);
+      console.log("Personne détectée:", data);
       
       if (data.name) {
         personDetectedEl.textContent = data.name;
@@ -493,21 +515,88 @@
       }
     });
     
+    // Listen for mode change events from server
+    socket.on("modeChange", function(data) {
+      console.log("Changement de mode:", data);
+      const modeSelect = document.getElementById("ledMode");
+      document.getElementById("currentMode").innerText = data.mode === "simple" ? "Simple" : "Alarme";
+      
+      // Update the select dropdown to match the new mode
+      if (modeSelect.value !== data.mode) {
+        modeSelect.value = data.mode;
+      }
+    });
+    
     // Listen for general notifications
     socket.on("notification", function(data) {
       console.log("Notification:", data);
       showNotification(data.type, data.message);
     });
     
+    // Function to send mode change request
+    function updateMode(mode) {
+      socket.emit('updateMode', { mode: mode });
+      currentMode = mode;
+    }
+    
+    // Listen for mode update response
+    socket.on('modeUpdateResponse', function(data) {
+      if (data.success) {
+        console.log('Mode mis à jour:', data);
+      } else {
+        console.error('Erreur de mise à jour du mode:', data.error);
+      }
+    });
+    
+    // Function to control the door
+    function controlDoor(action) {
+      socket.emit('doorControl', { action: action });
+    }
+    
+    // Listen for door control response
+    socket.on('doorControlResponse', function(data) {
+      if (data.success) {
+        console.log('Contrôle de la porte:', data);
+      } else {
+        console.error('Erreur de contrôle de la porte:', data.error);
+      }
+    });
+    
+    // Function to stop the alarm
+    function stopAlarm() {
+      socket.emit("stopAlarm");
+      console.log("Demande d'arrêt de l'alarme envoyée");
+      
+      // Show notification
+      showNotification('success', 'Demande d\'arrêt de l\'alarme envoyée');
+    }
+    
+    // Listen for stop alarm response
+    socket.on('stopAlarmResponse', function(data) {
+      if (data.success) {
+        console.log('Alarme arrêtée:', data);
+      } else {
+        console.error('Erreur d\'arrêt de l\'alarme:', data.error);
+      }
+    });
+    
+    // Function to fetch sensor data
+    function fetchSensorData() {
+      socket.emit('getSensorData');
+      // The response will be handled by the existing "sensorData" event listener
+    }
+    
+    // Function to check alarm status
+    function checkAlarmStatus() {
+      socket.emit('getAlarmStatus');
+      // The response will be handled by the existing "alarmStatus" event listener
+    }
+    
     // Function to show intruder alert
-    function showIntruderAlert(message = 'INTRUDER ALERT! Unauthorized access detected!') {
+    function showIntruderAlert(message = 'INTRUSION DÉTECTÉE ! Personne non autorisée !') {
       const alertDiv = document.getElementById('intruder-alert');
       alertDiv.querySelector('.alert-message').textContent = message;
       alertDiv.style.display = 'block';
-      
-      // Play alarm sound
-      const alarmSound = document.getElementById('alarmSound');
-      alarmSound.play();
     }
     
     // Function to hide intruder alert
@@ -522,140 +611,78 @@
     }
     
     // Function to show notification
-    function showNotification(type, message) {
+    function showNotification(type, message, sticky = false) {
       const notificationArea = document.getElementById('notificationArea');
       
       // Create notification element
       const notification = document.createElement('div');
-      notification.className = `alert alert-${type} alert-dismissible fade show`;
-      notification.role = 'alert';
+      notification.className = `notification ${type}`;
       notification.innerHTML = `
         ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
       `;
       
       // Add to notification area
       notificationArea.appendChild(notification);
       
-      // Auto-remove after 5 seconds
-      setTimeout(() => {
-        notification.classList.remove('show');
+      // Auto-remove after 5 seconds or 2 seconds for presence detection
+      if (!sticky) {
         setTimeout(() => {
-          notification.remove();
-        }, 500);
-      }, 5000);
-    }
-    
-    // Function to send mode change request
-    function updateMode(mode) {
-      fetch('/update-mode', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ mode: mode }),
-      })
-      .then(response => response.json())
-      .then(data => {
-        console.log('Mode updated:', data);
-        currentMode = mode;
-      })
-      .catch((error) => {
-        console.error('Error updating mode:', error);
-      });
-    }
-    
-    // Function to control the door
-    function controlDoor(action) {
-      fetch('/door-control', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: action }),
-      })
-      .then(response => response.json())
-      .then(data => {
-        console.log('Door control:', data);
-      })
-      .catch((error) => {
-        console.error('Error controlling door:', error);
-      });
-    }
-    
-    // Function to stop the alarm
-    function stopAlarm() {
-      fetch('/stop-alarm', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}),
-      })
-      .then(response => response.json())
-      .then(data => {
-        console.log('Alarm stopped:', data);
-      })
-      .catch((error) => {
-        console.error('Error stopping alarm:', error);
-      });
-    }
-    
-    // Function to fetch sensor data
-    function fetchSensorData() {
-      fetch('/sensor-data')
-        .then(response => response.json())
-        .then(data => {
-          sensorValueEl.textContent = data.value;
-          ledStateEl.textContent = data.ledState;
-        })
-        .catch(error => console.error('Error fetching sensor data:', error));
-    }
-    
-    // Function to check alarm status
-    function checkAlarmStatus() {
-      fetch('/alarm-status')
-        .then(response => response.json())
-        .then(data => {
-          alarmStatusEl.textContent = data.status;
-          alarmMessageEl.textContent = data.message;
-          
-          if (data.alarmActive) {
-            alarmStatusEl.className = "status alarm";
-          } else {
-            alarmStatusEl.className = "status";
-          }
-          
-          // Update door state
-          if (data.doorState) {
-            doorStateEl.textContent = data.doorState === 'open' ? 'ouverte' : 'fermée';
-          }
-          
-          // Update detected person
-          if (data.detectedPerson) {
-            personDetectedEl.textContent = data.detectedPerson;
-            personDetectedContainerEl.style.display = 'block';
-          } else {
-            personDetectedContainerEl.style.display = 'none';
-          }
-        })
-        .catch(error => console.error('Error checking alarm status:', error));
+          notification.classList.remove('show');
+          setTimeout(() => {
+            notification.remove();
+          }, 500);
+        }, 5000);
+      } else {
+        // Pour les notifications de présence détectée (sticky=true), on les supprime après 2 secondes
+        setTimeout(() => {
+          notification.classList.remove('show');
+          setTimeout(() => {
+            notification.remove();
+          }, 500);
+        }, 2000);
+      }
+      
+      // Show the notification
+      notification.classList.add('show');
     }
     
     // Add event listener for mode change
     document.getElementById("ledMode").addEventListener("change", function() {
-      const newMode = this.value;
-      currentMode = newMode;
-      updateMode(newMode);
+      const mode = this.value;
+      socket.emit("updateMode", { mode });
+      console.log("Demande de changement de mode:", mode);
+      
+      // Show notification
+      showNotification('info', `Changement de mode vers ${mode === 'simple' ? 'Simple' : 'Alarme'}`);
     });
     
-    // Add event listeners for door control buttons
-    openDoorBtn.addEventListener("click", function() {
-      controlDoor('open');
+    // Add event listener for open door button
+    document.getElementById("openDoorBtn").addEventListener("click", function() {
+      socket.emit("doorControl", { action: "open" });
+      console.log("Demande d'ouverture de la porte");
+      
+      // Show notification
+      showNotification('info', 'Demande d\'ouverture de la porte');
     });
     
-    closeDoorBtn.addEventListener("click", function() {
-      controlDoor('close');
+    // Add event listener for close door button
+    document.getElementById("closeDoorBtn").addEventListener("click", function() {
+      socket.emit("doorControl", { action: "close" });
+      console.log("Demande de fermeture de la porte");
+      
+      // Show notification
+      showNotification('info', 'Demande de fermeture de la porte');
+    });
+    
+    // Add event listener for stop alarm button
+    document.getElementById("stopAlarmBtn").addEventListener("click", function() {
+      stopAlarm();
+      document.getElementById('intruder-alert').style.display = 'none';
+    });
+    
+    // Add event listener for stop alarm no intrusion button
+    document.getElementById("stopAlarmNoIntrusionBtn").addEventListener("click", function() {
+      stopAlarm();
     });
     
     // Fetch data periodically
